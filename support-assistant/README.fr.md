@@ -27,6 +27,8 @@ Le formulaire de relecture propose trois choix : **send as is** (envoyer tel que
 
 ## Configuration
 
+La version détaillée, clic par clic, se trouve dans [SETUP.fr.md](../SETUP.fr.md) (étape 9).
+
 1. Créez les deux mêmes identifiants que pour le tri des offres d'emploi : `Gemini API key` (Header Auth, nom `x-goog-api-key`) et votre bot Telegram.
 2. Lancez `0. Create the table` une seule fois.
 3. Dans `1. Intake and approval` :

@@ -21,6 +21,8 @@ These workflows follow one checklist, written up in [GUARDRAILS.md](GUARDRAILS.m
 
 ## Quick start (Windows, macOS or Linux)
 
+**First time? Follow [SETUP.md](SETUP.md): every click, in order, with the usual pitfalls.**
+
 You need [Docker Desktop](https://www.docker.com/products/docker-desktop/), a free [Gemini API key](https://aistudio.google.com/apikey) and a Telegram bot (created in two minutes with [@BotFather](https://t.me/BotFather)).
 
 ```bash

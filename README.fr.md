@@ -21,6 +21,8 @@ Ces workflows suivent une seule liste de contrôle, décrite dans [GUARDRAILS.fr
 
 ## Démarrage rapide (Windows, macOS ou Linux)
 
+**Première fois ? Suivez [SETUP.fr.md](SETUP.fr.md) : chaque clic, dans l'ordre, avec les pièges habituels.**
+
 Il vous faut [Docker Desktop](https://www.docker.com/products/docker-desktop/), une [clé API Gemini](https://aistudio.google.com/apikey) gratuite et un bot Telegram (créé en deux minutes avec [@BotFather](https://t.me/BotFather)).
 
 ```bash

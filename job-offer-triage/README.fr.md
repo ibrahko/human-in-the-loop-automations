@@ -25,6 +25,8 @@ Chaque matin de semaine, cette automatisation :
 
 ## Configuration (environ 15 minutes)
 
+La version détaillée, clic par clic, se trouve dans [SETUP.fr.md](../SETUP.fr.md) (étapes 3 à 8).
+
 1. **Importez** les workflows (voir le README principal), puis ouvrez http://localhost:5678.
 2. **Clé Gemini.** Créez une clé gratuite sur https://aistudio.google.com/apikey. Dans n8n, allez dans *Credentials → Create credential → Header Auth* (identifiants → créer un identifiant → authentification par en-tête), mettez `x-goog-api-key` dans **Name** et votre clé dans **Value**, puis enregistrez-le sous le nom `Gemini API key`.
 3. **Bot Telegram.**

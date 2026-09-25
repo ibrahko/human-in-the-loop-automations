@@ -25,6 +25,8 @@ Every weekday morning, this automation:
 
 ## Setup (about 15 minutes)
 
+The detailed, click-by-click version is in [SETUP.md](../SETUP.md) (steps 3 to 8).
+
 1. **Import** the workflows (see the main README), then open http://localhost:5678.
 2. **Gemini key.** Create a free key at https://aistudio.google.com/apikey. In n8n, go to *Credentials → Create credential → Header Auth*, set **Name** to `x-goog-api-key` and **Value** to your key, and save it as `Gemini API key`.
 3. **Telegram bot.**

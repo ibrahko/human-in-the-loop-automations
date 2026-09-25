@@ -27,6 +27,8 @@ The review form offers three choices: **send as is**, **send my edited version**
 
 ## Setup
 
+The detailed, click-by-click version is in [SETUP.md](../SETUP.md) (step 9).
+
 1. Create the same two credentials as for the job offer triage: `Gemini API key` (Header Auth, name `x-goog-api-key`) and your Telegram bot.
 2. Run `0. Create the table` once.
 3. In `1. Intake and approval`:
