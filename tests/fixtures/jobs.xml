@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Test job feed</title>
+<link>https://jobs.example.com</link>
+<description>Fixture for the triage workflow</description>
+<item>
+  <title>Acme: Senior Django Engineer</title>
+  <link>https://jobs.example.com/acme-django</link>
+  <pubDate>{{DAYS_AGO:0}}</pubDate>
+  <description><![CDATA[<p>Remote, anywhere in the world. Python, Django REST Framework, PostgreSQL. Async written communication. MARK_GOOD</p>]]></description>
+</item>
+<item>
+  <title>Acme: Senior Django Engineer (repost)</title>
+  <link>https://jobs.example.com/acme-django?utm_source=rss</link>
+  <pubDate>{{DAYS_AGO:0}}</pubDate>
+  <description><![CDATA[Same offer, tracking link. MARK_GOOD]]></description>
+</item>
+<item>
+  <title>Beta Corp: Backend Developer (US only)</title>
+  <link>https://jobs.example.com/beta-backend</link>
+  <pubDate>{{DAYS_AGO:1}}</pubDate>
+  <description><![CDATA[US residents only, daily video stand-ups. MARK_WEAK]]></description>
+</item>
+<item>
+  <title>Gamma: Python Contractor</title>
+  <link>https://jobs.example.com/gamma-python</link>
+  <pubDate>{{DAYS_AGO:1}}</pubDate>
+  <description><![CDATA[Short description. MARK_INCONSISTENT]]></description>
+</item>
+<item>
+  <title>Delta: AI Engineer</title>
+  <link>https://jobs.example.com/delta-ai</link>
+  <pubDate>{{DAYS_AGO:2}}</pubDate>
+  <description><![CDATA[LLM agents in production. MARK_GARBAGE]]></description>
+</item>
+<item>
+  <title>Epsilon: FastAPI Engineer</title>
+  <link>https://jobs.example.com/epsilon-fastapi</link>
+  <pubDate>{{DAYS_AGO:2}}</pubDate>
+  <description><![CDATA[FastAPI and Postgres. MARK_QUOTA]]></description>
+</item>
+<item>
+  <title>Eta: Platform Engineer</title>
+  <link>https://jobs.example.com/eta-platform</link>
+  <pubDate>{{DAYS_AGO:1}}</pubDate>
+  <description><![CDATA[Kubernetes and Python. MARK_NULL]]></description>
+</item>
+<item>
+  <title>Theta: API Engineer</title>
+  <link>https://jobs.example.com/theta-api</link>
+  <pubDate>{{DAYS_AGO:1}}</pubDate>
+  <description><![CDATA[REST APIs with FastAPI. MARK_BAND]]></description>
+</item>
+<item>
+  <title>Zeta: Old Offer</title>
+  <link>https://jobs.example.com/zeta-old</link>
+  <pubDate>{{DAYS_AGO:10}}</pubDate>
+  <description><![CDATA[Too old to be kept. MARK_GOOD]]></description>
+</item>
+</channel>
+</rss>

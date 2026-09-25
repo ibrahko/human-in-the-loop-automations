@@ -1,0 +1,152 @@
+{
+  "id": "hitlSupSetup0001",
+  "name": "Support — 0. Create the table",
+  "description": "Run once before the intake workflow.",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "21e8ffe3-4648-5d79-b69f-b1949d18e4a7",
+      "name": "Run once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "support_tickets",
+        "columns": {
+          "column": [
+            {
+              "name": "ticket_id",
+              "type": "string"
+            },
+            {
+              "name": "received_at",
+              "type": "string"
+            },
+            {
+              "name": "customer_name",
+              "type": "string"
+            },
+            {
+              "name": "customer_email",
+              "type": "string"
+            },
+            {
+              "name": "order_number",
+              "type": "string"
+            },
+            {
+              "name": "message",
+              "type": "string"
+            },
+            {
+              "name": "category",
+              "type": "string"
+            },
+            {
+              "name": "urgency",
+              "type": "string"
+            },
+            {
+              "name": "language",
+              "type": "string"
+            },
+            {
+              "name": "ai_confidence",
+              "type": "number"
+            },
+            {
+              "name": "route",
+              "type": "string"
+            },
+            {
+              "name": "route_reason",
+              "type": "string"
+            },
+            {
+              "name": "draft_reply",
+              "type": "string"
+            },
+            {
+              "name": "decision",
+              "type": "string"
+            },
+            {
+              "name": "final_reply",
+              "type": "string"
+            },
+            {
+              "name": "edited",
+              "type": "string"
+            },
+            {
+              "name": "decided_at",
+              "type": "string"
+            },
+            {
+              "name": "minutes_to_decision",
+              "type": "number"
+            },
+            {
+              "name": "model",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "id": "2376b1cb-f6dc-561a-b310-ffefd8405522",
+      "name": "Create support_tickets table",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Run this once\nCreates the `support_tickets` data table used by the intake and report workflows. Running it again does nothing if the table already exists.",
+        "height": 200,
+        "width": 420
+      },
+      "id": "e83f40ab-6036-5ec8-9aa5-6f366ccd3686",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -300
+      ]
+    }
+  ],
+  "connections": {
+    "Run once": {
+      "main": [
+        [
+          {
+            "node": "Create support_tickets table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

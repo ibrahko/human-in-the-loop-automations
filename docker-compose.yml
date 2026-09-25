@@ -1,0 +1,19 @@
+# Local n8n for the two projects. Start: docker compose up -d  ·  Open: http://localhost:5678
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.40.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"   # reachable from this computer only
+    environment:
+      - GENERIC_TIMEZONE=Africa/Bamako
+      - TZ=Africa/Bamako
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./job-offer-triage/workflows:/import/job-offer-triage:ro
+      - ./support-assistant/workflows:/import/support-assistant:ro
+
+volumes:
+  n8n_data:

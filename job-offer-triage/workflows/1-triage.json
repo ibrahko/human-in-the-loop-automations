@@ -1,0 +1,566 @@
+{
+  "id": "hitlJobTriage001",
+  "name": "Job offers — 1. Triage with human approval",
+  "description": "Reads public job feeds, asks Gemini to score each new offer against written criteria, stores everything for a human decision and sends a Telegram digest. Nothing is applied automatically.",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "0bccf72a-3b78-50cf-a16a-f93816a7555d",
+      "name": "Every weekday at 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0630020c-0970-5fb0-8fd5-41e1f234dd02",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"model\": \"gemini-3.5-flash-lite\",\n  \"telegram_chat_id\": \"PUT_YOUR_TELEGRAM_CHAT_ID_HERE\",\n  \"max_offers_per_run\": 15,\n  \"max_age_days\": 3,\n  \"feeds\": [\n    \"https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss\",\n    \"https://himalayas.app/jobs/rss\"\n  ],\n  \"criteria\": \"Profile: back-end engineer, Python (Django, Django REST Framework, FastAPI), PostgreSQL, AI agents and LLM integration. Based in West Africa (UTC+0).\\nMust have: fully remote AND open to candidates outside the US/EU (\\\"anywhere\\\", \\\"worldwide\\\", EMEA, Africa). Pay at or above 20 USD per hour when stated.\\nStrong plus: written, asynchronous communication; Python back end or AI agents as the core of the job; part-time contract or long engagement.\\nRed flags: country-restricted hiring, daily voice calls in English, on-site work, no company name, payment requested from the candidate, contact moved to WhatsApp or Telegram.\"\n}",
+        "options": {}
+      },
+      "id": "844f2f8a-fe1e-54ab-817d-8f36ada18106",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per RSS feed listed in Config.\nreturn $json.feeds.map((url) => ({ json: { url } }));\n"
+      },
+      "id": "2ab06360-b11b-5764-8dba-16369c117c14",
+      "name": "One item per feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "id": "8550dfcc-e06f-5ba7-878e-0f68fa88cc7f",
+      "name": "Read the feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise the feed items, drop duplicates and anything older than max_age_days.\nconst cfg = $('Config').first().json;\nconst maxAgeMs = cfg.max_age_days * 24 * 60 * 60 * 1000;\nconst now = Date.now();\n\nconst text = (value) =>\n  String(value || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&#39;|&rsquo;/g, \"'\")\n    .replace(/&quot;/g, '\"')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\nconst seen = new Set();\nconst offers = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  if (!j.link || j.error) continue; // a feed that failed returns an error item: skip it\n  const link = String(j.link).split('?')[0].split('#')[0];\n  if (seen.has(link)) continue;\n  const published = new Date(j.isoDate || j.pubDate || now);\n  if (Number.isNaN(published.getTime()) || now - published.getTime() > maxAgeMs) continue;\n  seen.add(link);\n  const host = link.match(/^https?:\\/\\/([^/:]+)/i);\n  const source = host ? host[1].replace(/^www\\./, '') : 'unknown';\n  offers.push({\n    json: {\n      link,\n      title: text(j.title).slice(0, 200),\n      source,\n      published_at: published.toISOString(),\n      description: text(j['content:encoded'] || j.content || j.contentSnippet || j.description).slice(0, 4000),\n    },\n  });\n}\nreturn offers;\n"
+      },
+      "id": "d134c96b-3b4e-581c-8725-554128471453",
+      "name": "Clean and keep recent offers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "job_offers"
+        },
+        "matchType": "anyCondition",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "link",
+              "condition": "eq",
+              "keyValue": "={{ $json.link }}"
+            }
+          ]
+        }
+      },
+      "id": "921cb578-d5ee-5e52-95c7-440c8330cb4d",
+      "name": "Keep offers not seen before",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Protect the free Gemini quota: score at most max_offers_per_run new offers per run.\n// The rest stay unseen and are picked up by the next run.\nconst cfg = $('Config').first().json;\nreturn $input.all().slice(0, cfg.max_offers_per_run);\n"
+      },
+      "id": "de5e3339-43b4-5480-b150-36f5519285d6",
+      "name": "Cap the number per run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build the Gemini request. The answer must follow a JSON schema, so it can be checked.\nconst cfg = $('Config').first().json;\nconst offer = $json;\n\nconst prompt = [\n  'You screen remote job offers for one freelance engineer.',\n  '',\n  'CANDIDATE CRITERIA',\n  cfg.criteria,\n  '',\n  'OFFER',\n  `Title: ${offer.title}`,\n  `Source: ${offer.source}`,\n  `Link: ${offer.link}`,\n  'Description:',\n  offer.description,\n  '',\n  'Score the offer from 0 to 100 against the criteria.',\n  'Rules: be strict; missing information is a risk, not a plus; use only facts written in the offer;',\n  'verdict is \"apply\" (70 or more), \"discuss\" (50 to 69) or \"skip\" (below 50);',\n  'reasons: two or three sentences quoting the facts you used.',\n].join('\\n');\n\nreturn {\n  json: {\n    ...offer,\n    request: {\n      contents: [{ role: 'user', parts: [{ text: prompt }] }],\n      generationConfig: {\n        temperature: 0.2,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'OBJECT',\n          properties: {\n            score: { type: 'INTEGER' },\n            verdict: { type: 'STRING', enum: ['apply', 'discuss', 'skip'] },\n            reasons: { type: 'STRING' },\n            english_risk: { type: 'STRING', enum: ['low', 'medium', 'high'] },\n            red_flags: { type: 'ARRAY', items: { type: 'STRING' } },\n          },\n          required: ['score', 'verdict', 'reasons', 'english_risk', 'red_flags'],\n        },\n      },\n    },\n  },\n};\n"
+      },
+      "id": "22e8323c-da12-5cc9-ab8a-47337bc2144f",
+      "name": "Build the Gemini request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Config').first().json.model }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 5000
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "c2e0a035-3a29-594d-9950-5ca7ab7459c9",
+      "name": "Ask Gemini for a score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Guardrail: never trust the AI answer blindly. A failed call is stored as \"error\", a\n// malformed or inconsistent answer as \"invalid\"; both are flagged for a manual look.\nconst cfg = $('Config').first().json;\nconst offer = $('Build the Gemini request').item.json;\n\nconst problems = [];\nlet ai = null;\nif ($json.error) {\n  // The call itself failed (quota, network, wrong key...). Keep the offer, flagged.\n  const err = $json.error;\n  problems.push(`Gemini call failed: ${String(err.message || err.description || JSON.stringify(err)).slice(0, 300)}`);\n} else {\n  try {\n    ai = JSON.parse($json.candidates[0].content.parts[0].text);\n  } catch (e) {\n    problems.push('the answer is not valid JSON');\n  }\n  if (!problems.length && (ai === null || typeof ai !== 'object' || Array.isArray(ai))) {\n    problems.push('the answer is not a JSON object');\n    ai = null;\n  }\n}\nif (ai) {\n  if (!Number.isInteger(ai.score) || ai.score < 0 || ai.score > 100) problems.push('score outside 0-100');\n  if (!['apply', 'discuss', 'skip'].includes(ai.verdict)) problems.push('unknown verdict');\n  // Same bands as in the prompt: apply 70+, discuss 50-69, skip below 50.\n  const band = ai.score >= 70 ? 'apply' : ai.score >= 50 ? 'discuss' : 'skip';\n  if (Number.isInteger(ai.score) && ['apply', 'discuss', 'skip'].includes(ai.verdict) && ai.verdict !== band) {\n    problems.push(`\"${ai.verdict}\" does not match a score of ${ai.score}`);\n  }\n  if (!['low', 'medium', 'high'].includes(ai.english_risk)) problems.push('unknown english_risk');\n  if (!Array.isArray(ai.red_flags)) problems.push('red_flags is not a list');\n  if (!ai.reasons || String(ai.reasons).trim().length < 20) problems.push('no real justification');\n}\nconst valid = problems.length === 0;\nconst failed = Boolean($json.error);\n\nreturn {\n  json: {\n    link: offer.link,\n    title: offer.title,\n    source: offer.source,\n    published_at: offer.published_at,\n    ai_score: valid ? ai.score : null,\n    ai_verdict: valid ? ai.verdict : failed ? 'error' : 'invalid',\n    ai_reasons: valid ? String(ai.reasons).slice(0, 1000) : failed ? problems[0] : `AI answer rejected: ${problems.join('; ')}`,\n    english_risk: valid ? ai.english_risk : '',\n    red_flags: valid ? ai.red_flags.map(String).join(' | ').slice(0, 500) : '',\n    model: cfg.model,\n    status: 'to_review',\n    human_decision: '',\n    decided_at: '',\n  },\n};\n"
+      },
+      "id": "7ff2da52-b514-57b9-89d9-1f9016907b19",
+      "name": "Check the AI answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "job_offers"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link": "={{ $json.link }}",
+            "title": "={{ $json.title }}",
+            "source": "={{ $json.source }}",
+            "published_at": "={{ $json.published_at }}",
+            "ai_score": "={{ $json.ai_score }}",
+            "ai_verdict": "={{ $json.ai_verdict }}",
+            "ai_reasons": "={{ $json.ai_reasons }}",
+            "english_risk": "={{ $json.english_risk }}",
+            "red_flags": "={{ $json.red_flags }}",
+            "model": "={{ $json.model }}",
+            "status": "={{ $json.status }}",
+            "human_decision": "={{ $json.human_decision }}",
+            "decided_at": "={{ $json.decided_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link",
+              "displayName": "link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_score",
+              "displayName": "ai_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_verdict",
+              "displayName": "ai_verdict",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_reasons",
+              "displayName": "ai_reasons",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "english_risk",
+              "displayName": "english_risk",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "red_flags",
+              "displayName": "red_flags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_decision",
+              "displayName": "human_decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decided_at",
+              "displayName": "decided_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44fe0178-6fe1-5052-b4dc-867dff3699fb",
+      "name": "Save for human review",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One Telegram message listing today's new offers, best first.\nconst offers = $input.all().map((i) => i.json).filter((o) => o.link);\nif (offers.length === 0) return [];\n\nconst ranked = offers\n  .filter((o) => o.ai_score !== null && o.ai_score !== undefined && o.ai_score !== '')\n  .sort((a, b) => b.ai_score - a.ai_score);\nconst flagged = offers.filter((o) => o.ai_verdict === 'invalid' || o.ai_verdict === 'error');\n\nconst lines = [\n  `Job offers: ${offers.length} new`,\n  'AI ranking only. Nothing is applied automatically: decide in the job_offers table (human_decision = apply or skip).',\n  '',\n];\nfor (const o of ranked) {\n  lines.push(`${o.ai_score} · ${o.ai_verdict} · ${o.title}`);\n  lines.push(`   ${o.source} · English risk: ${o.english_risk || '?'}`);\n  if (o.red_flags) lines.push(`   ⚠️ ${o.red_flags}`);\n  lines.push(`   ${String(o.ai_reasons).slice(0, 220)}`);\n  lines.push(`   ${o.link}`);\n  lines.push('');\n}\nif (flagged.length) {\n  lines.push(`⚠️ ${flagged.length} offer(s) need a manual look (AI answer rejected or failed):`);\n  for (const o of flagged) lines.push(`- ${o.title} — ${o.link}`);\n}\n\nlet text = lines.join('\\n');\nif (text.length > 3900) text = `${text.slice(0, 3850)}\\n… (truncated, see the table)`;\nreturn [{ json: { text } }];\n"
+      },
+      "id": "8d1062d5-cca8-51f0-a7ba-fac08971995b",
+      "name": "Write the digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Config').first().json.telegram_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "e7bdcefe-0351-5536-a2f7-a1ce5d9218f5",
+      "name": "Send the digest on Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Job offers — triage with human approval\n1. Reads public RSS feeds (no scraping, no login).\n2. Keeps offers published in the last days and never seen before.\n3. Gemini scores each offer against the criteria in **Config**.\n4. **Check the AI answer** rejects malformed or inconsistent answers instead of trusting them.\n5. Every offer is saved with `status = to_review`. **Nothing is applied automatically.**\n6. You decide in the `job_offers` table: set `human_decision` to `apply` or `skip`.\n\nSetup: Gemini key as *Header Auth* (name `x-goog-api-key`), Telegram bot, then edit **Config**.",
+        "height": 360,
+        "width": 560
+      },
+      "id": "f3047d93-2729-59ea-94bb-b795dde2e2f2",
+      "name": "How it works",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Guardrail\nIf Gemini fails or answers badly, the offer is still saved, marked `error` or `invalid`, and flagged in the digest for a manual look. The workflow never drops an offer silently.",
+        "height": 200,
+        "width": 380,
+        "color": 3
+      },
+      "id": "57094e4c-7bb4-53bf-8670-a6bfa7de2723",
+      "name": "Guardrail",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every weekday at 08:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "One item per feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per feed": {
+      "main": [
+        [
+          {
+            "node": "Read the feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the feed": {
+      "main": [
+        [
+          {
+            "node": "Clean and keep recent offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean and keep recent offers": {
+      "main": [
+        [
+          {
+            "node": "Keep offers not seen before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep offers not seen before": {
+      "main": [
+        [
+          {
+            "node": "Cap the number per run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cap the number per run": {
+      "main": [
+        [
+          {
+            "node": "Build the Gemini request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build the Gemini request": {
+      "main": [
+        [
+          {
+            "node": "Ask Gemini for a score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Gemini for a score": {
+      "main": [
+        [
+          {
+            "node": "Check the AI answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the AI answer": {
+      "main": [
+        [
+          {
+            "node": "Save for human review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save for human review": {
+      "main": [
+        [
+          {
+            "node": "Write the digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write the digest": {
+      "main": [
+        [
+          {
+            "node": "Send the digest on Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

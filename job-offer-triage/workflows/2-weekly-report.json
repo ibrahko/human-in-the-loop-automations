@@ -1,0 +1,185 @@
+{
+  "id": "hitlJobReport001",
+  "name": "Job offers — 2. Weekly report: does the AI agree with me?",
+  "description": "Compares the AI verdicts with the human decisions and says whether the AI ranking can still be trusted.",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "f70f3f2e-1bbc-5d25-bfe3-c42376596df8",
+      "name": "Every Monday at 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "1fdc215d-b4c8-5524-a2db-87711ac66421",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"telegram_chat_id\": \"PUT_YOUR_TELEGRAM_CHAT_ID_HERE\",\n  \"window_days\": 28,\n  \"min_decisions\": 20,\n  \"min_agreement\": 0.7\n}",
+        "options": {}
+      },
+      "id": "0ee1fc5c-b1d9-5b98-b1f5-da286af583fc",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "job_offers"
+        },
+        "returnAll": true
+      },
+      "id": "33aa64fb-9574-5a15-862d-ca0e5cddeccb",
+      "name": "Get all offers",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Does the AI still agree with the human? This is the number that decides whether\n// the automation keeps running as is.\nconst cfg = $('Config').first().json;\nconst pct = (x) => `${Math.round(x * 100)}%`;\nconst all = $input.all().map((i) => i.json).filter((r) => r.link);\n// Judge the AI on recent offers only, so a recent drift is not hidden by old results.\nconst since = Date.now() - cfg.window_days * 24 * 60 * 60 * 1000;\nconst rows = all.filter((r) => new Date(r.createdAt || r.published_at).getTime() >= since);\n\nconst decision = (r) => String(r.human_decision || '').trim().toLowerCase();\nconst decided = rows.filter((r) => ['apply', 'skip'].includes(decision(r)));\nconst pending = rows.filter((r) => !decision(r));\nconst aiFailed = rows.filter((r) => ['invalid', 'error'].includes(r.ai_verdict));\nconst judged = decided.filter((r) => ['apply', 'discuss', 'skip'].includes(r.ai_verdict));\n\nconst agrees = (r) =>\n  (decision(r) === 'apply' && ['apply', 'discuss'].includes(r.ai_verdict)) ||\n  (decision(r) === 'skip' && r.ai_verdict === 'skip');\n// Agreement definition: you applied and the AI said apply or discuss (the offer reached you),\n// or you skipped and the AI said skip. A \"discuss\" on an offer you skip counts as a disagreement.\nconst agreement = judged.length ? judged.filter(agrees).length / judged.length : null;\nconst missed = judged.filter((r) => decision(r) === 'apply' && r.ai_verdict === 'skip');\n\nlet verdict;\nif (judged.length < cfg.min_decisions) {\n  verdict = `Too early to judge the AI: ${judged.length} of ${cfg.min_decisions} decisions needed.`;\n} else if (agreement < cfg.min_agreement) {\n  verdict = `PAUSE: the AI agrees with you on ${pct(agreement)} of offers (target ${pct(cfg.min_agreement)}). ` +\n    'Fix the criteria or the prompt before trusting the ranking again.';\n} else {\n  verdict = `OK: the AI agrees with you on ${pct(agreement)} of offers.`;\n}\n\nconst lines = [\n  'Job offers: weekly report',\n  `Last ${cfg.window_days} days: ${rows.length} offers · decided: ${decided.length} · waiting for you: ${pending.length}`,\n  `All time: ${all.length} offers stored`,\n  `AI answers rejected or failed: ${aiFailed.length}` + (rows.length ? ` (${pct(aiFailed.length / rows.length)})` : ''),\n  `Good offers the AI told you to skip: ${missed.length}`,\n  '',\n  verdict,\n];\nif (missed.length) {\n  lines.push('', 'Missed by the AI (look at why):');\n  for (const r of missed.slice(0, 5)) lines.push(`- ${r.title} — ${r.link}`);\n}\nreturn [{ json: { text: lines.join('\\n'), agreement, decided: decided.length, pending: pending.length, missed: missed.length } }];\n"
+      },
+      "id": "15dfb4e7-615d-56b4-9319-3c2f1e5db6d1",
+      "name": "Compute the metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Config').first().json.telegram_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "914a52a5-b6ea-51de-abf4-e50dae84b44f",
+      "name": "Send the report on Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## When to stop trusting the AI\nOnce you have decided on at least `min_decisions` offers, the report measures how often the AI verdict matches yours. Below `min_agreement`, it tells you to **pause** and fix the criteria or the prompt before relying on the ranking again. Only the last `window_days` count.\n\nThe costliest error is counted separately: offers the AI said to skip but you wanted to apply to.",
+        "height": 300,
+        "width": 520
+      },
+      "id": "77b8791c-2480-5618-8cbb-7a30165e2f0d",
+      "name": "Kill switch",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -360
+      ]
+    }
+  ],
+  "connections": {
+    "Every Monday at 09:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get all offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get all offers": {
+      "main": [
+        [
+          {
+            "node": "Compute the metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute the metrics": {
+      "main": [
+        [
+          {
+            "node": "Send the report on Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

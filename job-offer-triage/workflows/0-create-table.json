@@ -1,0 +1,128 @@
+{
+  "id": "hitlJobSetup0001",
+  "name": "Job offers — 0. Create the table",
+  "description": "Run once before the triage workflow.",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5c134750-984b-537c-9bc1-d3b3c6a18d1f",
+      "name": "Run once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "job_offers",
+        "columns": {
+          "column": [
+            {
+              "name": "link",
+              "type": "string"
+            },
+            {
+              "name": "title",
+              "type": "string"
+            },
+            {
+              "name": "source",
+              "type": "string"
+            },
+            {
+              "name": "published_at",
+              "type": "string"
+            },
+            {
+              "name": "ai_score",
+              "type": "number"
+            },
+            {
+              "name": "ai_verdict",
+              "type": "string"
+            },
+            {
+              "name": "ai_reasons",
+              "type": "string"
+            },
+            {
+              "name": "english_risk",
+              "type": "string"
+            },
+            {
+              "name": "red_flags",
+              "type": "string"
+            },
+            {
+              "name": "model",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "human_decision",
+              "type": "string"
+            },
+            {
+              "name": "decided_at",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "id": "89b304aa-75b1-5f41-9aea-efef429143c9",
+      "name": "Create job_offers table",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Run this once\nCreates the `job_offers` data table used by the triage and report workflows. Running it again does nothing if the table already exists.",
+        "height": 200,
+        "width": 420
+      },
+      "id": "b88a5bfc-5be9-5152-b96e-0a5bfdceb7c0",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -300
+      ]
+    }
+  ],
+  "connections": {
+    "Run once": {
+      "main": [
+        [
+          {
+            "node": "Create job_offers table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
