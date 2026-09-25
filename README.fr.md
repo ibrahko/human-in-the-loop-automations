@@ -40,7 +40,8 @@ Les planifications utilisent le fuseau horaire défini dans `docker-compose.yml`
 Les six workflows sont testés de bout en bout sur une vraie instance n8n (2.40.7), en local et sur GitHub Actions. Gemini, Telegram et les flux RSS sont remplacés par un serveur factice local (`tests/mock_server.py`). Les 17 tests de bout en bout, plus un test unitaire de la liste des mots à risque, couvrent :
 
 - **Tri des offres d'emploi :**
-  - les doublons et les offres trop anciennes sont écartés ;
+  - les doublons, les offres trop anciennes et les offres hors sujet sont écartés avant tout appel à l'IA ;
+  - les titres contenant `&`, `<`, `>` ou `_` sont échappés, pour que le message Telegram ne puisse pas être cassé ;
   - les réponses de l'IA mal formées, vides, incohérentes ou en échec sont signalées, et aucune n'arrête l'exécution ;
   - il y a un seul résumé par exécution et rien n'est renvoyé deux fois ;
   - la limite par exécution est respectée ;

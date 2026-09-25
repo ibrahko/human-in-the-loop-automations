@@ -13,6 +13,10 @@ const text = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// Cheap filter before any AI call: keep offers whose title or text mentions a keyword.
+const keywords = (cfg.keywords || []).map((k) => String(k).toLowerCase());
+const matches = (s) => !keywords.length || keywords.some((k) => new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(s));
+
 const seen = new Set();
 const offers = [];
 for (const item of $input.all()) {
@@ -22,6 +26,8 @@ for (const item of $input.all()) {
   if (seen.has(link)) continue;
   const published = new Date(j.isoDate || j.pubDate || now);
   if (Number.isNaN(published.getTime()) || now - published.getTime() > maxAgeMs) continue;
+  const body = text(j['content:encoded'] || j.content || j.contentSnippet || j.description);
+  if (!matches(`${text(j.title)} ${body}`.toLowerCase())) continue;
   seen.add(link);
   const host = link.match(/^https?:\/\/([^/:]+)/i);
   const source = host ? host[1].replace(/^www\./, '') : 'unknown';
@@ -31,7 +37,7 @@ for (const item of $input.all()) {
       title: text(j.title).slice(0, 200),
       source,
       published_at: published.toISOString(),
-      description: text(j['content:encoded'] || j.content || j.contentSnippet || j.description).slice(0, 4000),
+      description: body.slice(0, 4000),
     },
   });
 }

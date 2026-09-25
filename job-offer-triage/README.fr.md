@@ -5,7 +5,7 @@
 Chaque matin de semaine, cette automatisation :
 
 1. Lit des flux publics d'offres d'emploi (RSS, sans extraction de pages web, sans connexion).
-2. Garde les offres des derniers jours qu'elle n'a encore jamais vues.
+2. Garde les offres des derniers jours qu'elle n'a encore jamais vues et qui citent l'un de vos **mots-clés**. Ce filtre gratuit passe avant tout appel à l'IA : les offres hors sujet ne consomment donc jamais votre quota Gemini.
 3. Demande à Gemini de noter chaque offre de 0 à 100 selon **vos critères écrits**.
 4. Rejette toute réponse de l'IA mal formée ou incohérente, par exemple un verdict "apply" (postuler) avec une note de 20.
 5. Enregistre chaque offre dans une table de données n8n, avec `status = to_review`.
@@ -51,6 +51,7 @@ Ce sont ces décisions que le rapport hebdomadaire mesure. Sans elles, le rappor
 |---|---|---|
 | `max_offers_per_run` | 15 | Protège le quota gratuit de Gemini. Les offres au-delà de la limite sont notées à l'exécution suivante, si elles sont toujours dans la limite de `max_age_days`. |
 | `max_age_days` | 3 | Les offres plus anciennes sont ignorées. |
+| `keywords` | python, django, fastapi, backend, api, llm… | Une offre doit citer au moins l'un d'eux, dans son titre ou son texte. Laissez la liste vide pour tout envoyer à Gemini. |
 | `feeds` | We Work Remotely (back end), Himalayas | Tout flux RSS d'offres d'emploi fonctionne. |
 | `criteria` | un profil d'exemple | La seule chose que Gemini sait de vous. Soyez concret. |
 

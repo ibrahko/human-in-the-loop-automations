@@ -40,7 +40,8 @@ Schedules use the time zone set in `docker-compose.yml` (`Africa/Bamako`). Chang
 The six workflows are tested end to end against a real n8n instance (2.40.7), locally and on GitHub Actions. Gemini, Telegram and the RSS feeds are replaced by a local mock (`tests/mock_server.py`). The 17 end-to-end tests, plus a unit test of the risky-word list, cover:
 
 - **Job offer triage:**
-  - duplicates and stale offers are dropped;
+  - duplicates, stale offers and off-topic offers are dropped before any AI call;
+  - titles with `&`, `<`, `>` or `_` are escaped, so the Telegram message cannot break;
   - malformed, empty, inconsistent and failed AI answers are flagged, and none of them stops the run;
   - there is one digest per run and nothing is re-sent;
   - the per-run cap is respected;

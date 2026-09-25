@@ -53,6 +53,18 @@
   <description><![CDATA[REST APIs with FastAPI. MARK_BAND]]></description>
 </item>
 <item>
+  <title>Iota: Performance Marketer</title>
+  <link>https://jobs.example.com/iota-marketing</link>
+  <pubDate>{{DAYS_AGO:0}}</pubDate>
+  <description><![CDATA[Meta ads campaigns for a parenting magazine. MARK_GOOD]]></description>
+</item>
+<item>
+  <title>Kappa: Django dev &amp; &lt;b&gt;mentor&lt;/b&gt; (R&amp;D_team)</title>
+  <link>https://jobs.example.com/kappa-django</link>
+  <pubDate>{{DAYS_AGO:0}}</pubDate>
+  <description><![CDATA[Python, Django, remote worldwide, snake_case everywhere. MARK_GOOD]]></description>
+</item>
+<item>
   <title>Zeta: Old Offer</title>
   <link>https://jobs.example.com/zeta-old</link>
   <pubDate>{{DAYS_AGO:10}}</pubDate>

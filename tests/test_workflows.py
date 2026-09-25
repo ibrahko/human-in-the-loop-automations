@@ -61,9 +61,10 @@ def offers_triage_scores_flags_and_notifies():
     ex = triage()
     assert ex.status == "success", ex.summary()
     rows = by_link(n.rows("job_offers"))
-    # 9 feed items: 1 duplicate (tracking link) and 1 too old are dropped; the broken feed is ignored.
+    # 11 feed items: a duplicate (tracking link), a stale offer and an off-topic offer (no keyword) are
+    # dropped before any AI call; the broken feed is ignored.
     assert set(rows) == {"acme-django", "beta-backend", "gamma-python", "delta-ai", "epsilon-fastapi",
-                         "eta-platform", "theta-api"}, rows.keys()
+                         "eta-platform", "theta-api", "kappa-django"}, rows.keys()
     assert rows["acme-django"]["ai_score"] == 84 and rows["acme-django"]["ai_verdict"] == "apply"
     assert rows["beta-backend"]["ai_verdict"] == "skip" and rows["beta-backend"]["red_flags"] == "US only"
     assert rows["gamma-python"]["ai_verdict"] == "invalid", "inconsistent answer must be rejected"
@@ -74,12 +75,14 @@ def offers_triage_scores_flags_and_notifies():
     assert rows["epsilon-fastapi"]["ai_verdict"] == "error", "failed call must be kept, flagged"
     assert all(r["status"] == "to_review" and r["human_decision"] == "" for r in rows.values())
     calls = mock_log("gemini")
-    assert len(calls) == 7 and all(c["key"] == "test-key" and c["schema"] for c in calls)
+    assert len(calls) == 8 and all(c["key"] == "test-key" and c["schema"] for c in calls)
     messages = mock_log("telegram")
     assert len(messages) == 1, f"exactly one digest expected, got {len(messages)}"
     text = messages[0]["text"]
-    assert messages[0]["chat_id"] == "42"
-    assert text.startswith("Job offers: 7 new") and "Nothing is applied automatically" in text
+    assert messages[0]["chat_id"] == "42" and messages[0]["parse_mode"] == "HTML"
+    # Titles with &, <, > and underscores are escaped, so Telegram's HTML parser cannot choke on them.
+    assert "Django dev &amp; mentor (R&amp;D_team)" in text and "<b>mentor</b>" not in text, text
+    assert text.startswith("<b>Job offers: 8 new</b>") and "Nothing is applied automatically" in text
     assert text.index("84 · apply") < text.index("35 · skip"), "digest must be sorted by score"
     assert "5 offer(s) need a manual look" in text
 
@@ -92,7 +95,7 @@ def offers_second_run_sends_nothing():
     assert ex.items("Keep offers not seen before") == []
     assert not ex.ran("Ask Gemini for a score")
     assert mock_log("gemini") == [] and mock_log("telegram") == []
-    assert len(n.rows("job_offers")) == 7
+    assert len(n.rows("job_offers")) == 8
 
 
 @test
@@ -103,7 +106,7 @@ def offers_cap_protects_the_quota():
     assert len(n.rows("job_offers")) == 2 and len(mock_log("gemini")) == 2
     for _ in range(3):
         triage(max_offers_per_run=2)
-    assert len(n.rows("job_offers")) == 7, "the rest is picked up by the next runs"
+    assert len(n.rows("job_offers")) == 8, "the rest is picked up by the next runs"
 
 
 def offer_row(slug, verdict, decision, score=None):
@@ -226,14 +229,18 @@ def support_edited_reply_is_stored():
 
 @test
 def support_refund_goes_to_a_human_without_draft():
-    ex = request("Bonjour, je veux être remboursé, le colis est arrivé abîmé.")
+    ex = request("Bonjour, je veux être remboursé, le colis est arrivé abîmé. <b>vite</b> & merci_bien",
+                 name="Awa_T <admin>")
     assert ex.status == "success", ex.summary()
     t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
     assert t["route"] == "human_only" and t["category"] == "refund" and t["draft_reply"] == ""
     assert "sensitive topic" in t["route_reason"]
     assert not ex.ran("Wait for the human decision")
-    msg = mock_log("telegram")[-1]["text"]
+    sent = mock_log("telegram")[-1]
+    msg = sent["text"]
     assert "needs a person" in msg and "Draft" not in msg
+    assert sent["parse_mode"] == "HTML" and "&lt;b&gt;vite&lt;/b&gt; &amp; merci_bien" in msg
+    assert "Awa_T &lt;admin&gt;" in msg
 
 
 @test

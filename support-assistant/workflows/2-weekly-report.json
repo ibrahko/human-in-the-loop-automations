@@ -93,7 +93,8 @@
         "text": "={{ $json.text }}",
         "additionalFields": {
           "appendAttribution": false,
-          "disable_web_page_preview": true
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
         }
       },
       "id": "ff698569-0cd0-53cf-8d32-366db45b77a6",

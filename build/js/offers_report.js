@@ -42,6 +42,7 @@ const lines = [
 ];
 if (missed.length) {
   lines.push('', 'Missed by the AI (look at why):');
-  for (const r of missed.slice(0, 5)) lines.push(`- ${r.title} — ${r.link}`);
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  for (const r of missed.slice(0, 5)) lines.push(`- ${esc(r.title)} — ${esc(r.link)}`);
 }
 return [{ json: { text: lines.join('\n'), agreement, decided: decided.length, pending: pending.length, missed: missed.length } }];

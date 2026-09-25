@@ -51,6 +51,10 @@ if (!cfg.drafting_enabled) {
   reason = 'the draft mentions money, a guarantee or a date: a person must write it';
 }
 
+// Escaped copies for the Telegram messages (sent as HTML).
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const draft = route === 'needs_approval' ? String(ai.draft_reply).slice(0, 2000) : '';
+
 return {
   json: {
     ...t,
@@ -62,12 +66,20 @@ return {
     route,
     route_reason: reason,
     // A draft is kept only when a human will review it.
-    draft_reply: route === 'needs_approval' ? String(ai.draft_reply).slice(0, 2000) : '',
+    draft_reply: draft,
     decision: '',
     final_reply: '',
     edited: '',
     decided_at: '',
     minutes_to_decision: null,
     model: cfg.model,
+    html: {
+      name: esc(t.customer_name),
+      email: esc(t.customer_email),
+      order: esc(t.order_number || '—'),
+      message: esc(t.message.slice(0, 1500)),
+      draft: esc(draft),
+      reason: esc(reason),
+    },
   },
 };

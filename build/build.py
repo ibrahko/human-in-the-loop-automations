@@ -135,7 +135,10 @@ def telegram(w, name, text_expr, x, y):
         {
             "chatId": "={{ $('Config').first().json.telegram_chat_id }}",
             "text": text_expr,
-            "additionalFields": {"appendAttribution": False, "disable_web_page_preview": True},
+            # HTML, not n8n's default Markdown: underscores in names and URLs broke the formatting.
+            # Every dynamic text is escaped before it reaches this node.
+            "additionalFields": {"appendAttribution": False, "disable_web_page_preview": True,
+                                 "parse_mode": "HTML"},
         },
         x,
         y,
@@ -246,6 +249,8 @@ def job_offer_triage():
             "telegram_chat_id": "PUT_YOUR_TELEGRAM_CHAT_ID_HERE",
             "max_offers_per_run": 15,
             "max_age_days": 3,
+            "keywords": ["python", "django", "fastapi", "flask", "back-end", "backend", "api", "llm", "ai agent",
+                         "ai engineer", "machine learning", "automation", "postgres"],
             "feeds": [
                 "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
                 "https://himalayas.app/jobs/rss",
@@ -320,7 +325,8 @@ def job_offer_triage():
         "How it works",
         "## Job offers — triage with human approval\n"
         "1. Reads public RSS feeds (no scraping, no login).\n"
-        "2. Keeps offers published in the last days and never seen before.\n"
+        "2. Keeps recent offers that mention one of the **keywords** and were never seen before "
+        "(a free filter before paying Gemini quota).\n"
         "3. Gemini scores each offer against the criteria in **Config**.\n"
         "4. **Check the AI answer** rejects malformed or inconsistent answers instead of trusting them.\n"
         "5. Every offer is saved with `status = to_review`. **Nothing is applied automatically.**\n"
@@ -528,9 +534,9 @@ def support_intake():
         "Ask a human to approve",
         "=📝 Ticket {{ $('Save the ticket').item.json.ticket_id }} — {{ $('Save the ticket').item.json.category }}"
         " ({{ $('Save the ticket').item.json.urgency }})\n"
-        "From: {{ $('Save the ticket').item.json.customer_name }}\n\n"
-        "Customer wrote:\n{{ $('Save the ticket').item.json.message.slice(0, 1200) }}\n\n"
-        "Draft reply:\n{{ $('Save the ticket').item.json.draft_reply }}\n\n"
+        "From: {{ $('Apply the guardrails').item.json.html.name }}\n\n"
+        "<b>Customer wrote:</b>\n{{ $('Apply the guardrails').item.json.html.message }}\n\n"
+        "<b>Draft reply:</b>\n{{ $('Apply the guardrails').item.json.html.draft }}\n\n"
         "Approve, edit or reject: {{ $execution.resumeFormUrl }}",
         1920,
         0,
@@ -539,10 +545,11 @@ def support_intake():
         w,
         "Hand over to a human",
         "=🙋 Ticket {{ $('Save the ticket').item.json.ticket_id }} needs a person, no draft proposed.\n"
-        "Reason: {{ $('Save the ticket').item.json.route_reason }}\n"
-        "From: {{ $('Save the ticket').item.json.customer_name }} <{{ $('Save the ticket').item.json.customer_email }}>\n"
-        "Order: {{ $('Save the ticket').item.json.order_number || '—' }}\n\n"
-        "Customer wrote:\n{{ $('Save the ticket').item.json.message.slice(0, 1500) }}",
+        "Reason: {{ $('Apply the guardrails').item.json.html.reason }}\n"
+        "From: {{ $('Apply the guardrails').item.json.html.name }} "
+        "&lt;{{ $('Apply the guardrails').item.json.html.email }}&gt;\n"
+        "Order: {{ $('Apply the guardrails').item.json.html.order }}\n\n"
+        "<b>Customer wrote:</b>\n{{ $('Apply the guardrails').item.json.html.message }}",
         1920,
         240,
     )

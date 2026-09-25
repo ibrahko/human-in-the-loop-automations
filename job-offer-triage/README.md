@@ -5,7 +5,7 @@
 Every weekday morning, this automation:
 
 1. Reads public job feeds (RSS, no scraping, no login).
-2. Keeps offers from the last few days that it has never seen before.
+2. Keeps offers from the last few days that it has never seen before and that mention one of your **keywords**. This free filter runs before any AI call, so off-topic offers never use your Gemini quota.
 3. Asks Gemini to score each offer from 0 to 100 against **your written criteria**.
 4. Rejects any AI answer that is malformed or inconsistent, for example an "apply" verdict with a score of 20.
 5. Saves every offer in an n8n data table, with `status = to_review`.
@@ -51,6 +51,7 @@ These decisions are what the weekly report measures. Without them, the report st
 |---|---|---|
 | `max_offers_per_run` | 15 | Protects the free Gemini quota. Offers above the cap are scored on the next run, if they are still within `max_age_days`. |
 | `max_age_days` | 3 | Older offers are ignored. |
+| `keywords` | python, django, fastapi, backend, api, llm… | An offer must mention at least one of them, in its title or text. Leave the list empty to send everything to Gemini. |
 | `feeds` | We Work Remotely (back end), Himalayas | Any RSS feed of job offers works. |
 | `criteria` | an example profile | The only thing Gemini knows about you. Be concrete. |
 

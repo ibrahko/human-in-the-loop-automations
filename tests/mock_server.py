@@ -109,7 +109,8 @@ class Handler(BaseHTTPRequestHandler):
                        "schema": "responseSchema" in body.get("generationConfig", {}), "status": code})
             return self._send(code, answer)
         if self.path.endswith("/sendMessage"):
-            self._log({"kind": "telegram", "chat_id": body.get("chat_id"), "text": body.get("text")})
+            self._log({"kind": "telegram", "chat_id": body.get("chat_id"), "text": body.get("text"),
+                       "parse_mode": body.get("parse_mode")})
             return self._send(200, {"ok": True, "result": {"message_id": 1, "chat": {"id": body.get("chat_id")},
                                                           "text": body.get("text")}})
         self._send(404, {"error": "not found"})
