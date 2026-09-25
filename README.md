@@ -56,7 +56,7 @@ The six workflows are tested end to end against a real n8n instance (2.40.7), lo
 
 ```bash
 npm install -g n8n@2.40.7   # Node.js 24
-tests/run_all.sh            # bash: Linux, macOS, or WSL / Git Bash on Windows
+bash tests/run_all.sh       # bash: Linux, macOS, or WSL / Git Bash on Windows
 ```
 
 The workflow JSON files are generated from `build/build.py` and the scripts in `build/js/`, so the logic can be read and reviewed as code. After a change, run `python build/build.py`.
