@@ -22,15 +22,15 @@ Every click, in order. It was written while doing the setup for real, so it incl
 4. Create your n8n account. It stays on your computer.
 5. **If a "Connect a model" window appears** (the n8n Assistant, asking for an Anthropic key), close it with the ✕. These workflows don't need it, and it is a paid service.
 
-## 2. Import the six workflows
+## 2. Import the seven workflows
 
 1. In the same terminal, run:
    ```
    docker compose exec n8n n8n import:workflow --separate --input=/import/job-offer-triage
    docker compose exec n8n n8n import:workflow --separate --input=/import/support-assistant
    ```
-2. Each command should print `Successfully imported 3 workflows`.
-3. Reload the n8n page. Under **Overview → Workflows** you now see six workflows, three starting with "Job offers" and three with "Support".
+2. The commands should print `Successfully imported 3 workflows` and `Successfully imported 4 workflows`.
+3. Reload the n8n page. Under **Overview → Workflows** you now see seven workflows: three starting with "Job offers" and four with "Support".
 
 > ⚠️ **Importing again replaces the workflows.** Your credential choices and your **Config** values are lost. Redo steps 6 and 8 after every re-import. Your data tables and your credentials themselves are kept.
 
@@ -110,28 +110,31 @@ If a node turns red, click it and read the message. Common causes:
 ## 9. Configure the support assistant
 
 1. Run **Support — 0. Create the table** once.
-2. Open **Support — 1. Intake and approval**.
-3. Choose your credentials in three nodes:
-   - **Ask Gemini to classify and draft**: the Gemini credential;
-   - **Ask a human to approve**: the Telegram credential;
-   - **Hand over to a human**: the Telegram credential.
-4. In **Config**:
-   - set `telegram_chat_id`;
-   - set `company_name`;
-   - leave `drafting_enabled` set to `true`.
-5. Save, then click **Publish**.
-6. Open the form at http://localhost:5678/form/support and send a test request, for example "Hello, where is my order?".
-7. On Telegram you receive the draft with a review link.
-   - Open the link **on the computer that runs n8n**, because it points to `localhost`.
-   - Choose *Send as is*, *Send my edited version* or *Reject*.
-8. Also try a refund request, for example "I want a refund". It must arrive as "needs a person", with no draft.
-9. In **Support — 2. Weekly report**, set the chat id, choose the Telegram credential, then **Publish**.
+2. Open **Support — 1. Intake**:
+   - choose the Gemini credential in **Ask Gemini to classify and draft**;
+   - choose the Telegram credential in **Ask a human to approve** and in **Hand over to a human**;
+   - in **Config**, set `telegram_chat_id` and `company_name`, and leave `drafting_enabled` set to `true`;
+   - save, then click **Publish**.
+3. Open **Support — 3. Review a draft**:
+   - choose the Telegram credential in **Confirm on Telegram**;
+   - in **Config**, set `telegram_chat_id`;
+   - save, then click **Publish**.
+4. Open the customer form at http://localhost:5678/form/support and send a test request, for example "Hello, where is my order?". You see "Thank you…". That is all the customer ever sees.
+5. On Telegram you receive the draft and, under **"Review: send, edit or reject"**, a link shown as grey text. Telegram does not make `localhost` links clickable: tap the link to copy it, then paste it into the browser.
+   - Open it **on the computer that runs n8n**, because it points to `localhost`.
+   - The form is pre-filled with the draft. Edit it if you want, choose *Send this reply* or *Reject*, and submit.
+   - Telegram confirms: "✅ Reply approved…" or "🚫 Draft rejected…".
+   - Opening the same link a second time is refused: each link works once.
+6. Also try a refund request, for example "I want a refund". It must arrive as "needs a person", with no draft and no link.
+7. In **Support — 2. Weekly report**, set the chat id, choose the Telegram credential, then **Publish**.
+
+> Upgrading from the first version (with "Wait for the human decision")? The table needs a new column. Open **Overview → Data tables**, delete `support_tickets`, run **Support — 0. Create the table** again, then redo steps 2 and 3.
 
 ## 10. Update to a newer version
 
 1. Get the new files, with `git pull` or by copying the new folder.
 2. Run the two import commands of step 2 again.
-3. Redo steps 6.3 to 6.6, 7.3 to 7.4 and 9.3 to 9.4: choose the credentials and fill in the **Config** values again.
+3. Redo steps 6.3 to 6.6, 7.3 to 7.4 and 9.2 to 9.3: choose the credentials and fill in the **Config** values again.
 
 ## 11. Stop n8n
 

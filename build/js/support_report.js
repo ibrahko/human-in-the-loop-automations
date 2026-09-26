@@ -13,8 +13,10 @@ const count = (d) => decided.filter((r) => r.decision === d).length;
 const asIs = count('sent_as_is');
 const editedN = count('sent_edited');
 const rejected = count('rejected');
-const expired = drafted.filter((r) => r.decision === 'expired').length;
-const waiting = drafted.filter((r) => !r.decision).length;
+// A draft nobody answered within hours_to_decide counts as expired: it was never sent.
+const tooOld = (r) => Date.now() - new Date(r.received_at).getTime() > cfg.hours_to_decide * 60 * 60 * 1000;
+const expired = drafted.filter((r) => r.decision === 'expired' || (!r.decision && tooOld(r))).length;
+const waiting = drafted.filter((r) => !r.decision && !tooOld(r)).length;
 
 const minutes = decided.map((r) => Number(r.minutes_to_decision)).filter((m) => Number.isFinite(m)).sort((a, b) => a - b);
 const mid = Math.floor(minutes.length / 2);

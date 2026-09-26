@@ -11,7 +11,14 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from n8n_harness import MOCK, N8n, insert_rows, mock_log, reset_mock_log, submit_form  # noqa: E402
+import html  # noqa: E402
+import re  # noqa: E402
+import urllib.request  # noqa: E402
+from urllib.parse import parse_qs, urlparse  # noqa: E402
+
+from n8n_harness import (  # noqa: E402
+    MOCK, N8n, activate, deactivate_all, drop_table, insert_rows, mock_log, post_form, reset_mock_log,
+)
 
 FEEDS = [f"{MOCK}/feeds/jobs.xml", f"{MOCK}/feeds/broken.xml"]
 OFFERS = "job-offer-triage/workflows"
@@ -162,116 +169,152 @@ def offers_report_on_an_empty_table():
 # ---------------- Project 2: support ----------------
 
 
-def request(message, name="Awa", email="awa@example.com", order="A-1001", gemini_url=None, **config):
-    reset_mock_log()
+BASE = "http://127.0.0.1:5678"
+
+
+def wait_for(predicate, what, timeout=60):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        found = predicate()
+        if found:
+            return found
+        time.sleep(1)
+    raise AssertionError(f"timed out waiting for {what}")
+
+
+def open_forms(gemini_url=None, **config):
+    """Publish the intake and review workflows, as a user would, so the real forms answer."""
+    deactivate_all(n)
     cfg = {"telegram_chat_id": "42", **config}
-    wf = n.prepare(f"{SUPPORT}/1-intake-and-approval.json", config=cfg, gemini_url=gemini_url)
-    form = {"Your name": name, "Email": email, "Order number": order, "Your message": message}
-    return n.run(wf, "Customer request form", trigger_items=[form])
+    activate(n, n.prepare(f"{SUPPORT}/1-intake-and-approval.json", config=cfg, gemini_url=gemini_url))
+    activate(n, n.prepare(f"{SUPPORT}/3-review-a-draft.json", config={"telegram_chat_id": "42"}))
+
+    def forms_ready():
+        try:
+            for path in ("support", "support-review"):
+                urllib.request.urlopen(f"{BASE}/form/{path}", timeout=5)
+            return True
+        except Exception:  # noqa: BLE001 - publishing takes a few seconds
+            return False
+
+    wait_for(forms_ready, "the published forms")
+
+
+def request(message, name="Awa", email="awa@example.com", order="A-1001"):
+    """A customer submits the public form. Returns the stored ticket and the Telegram message."""
+    reset_mock_log()
+    answer = post_form(f"{BASE}/form/support", [name, email, order, message])
+    assert "formWaitingUrl" not in answer, "the customer must never be sent to the review form"
+    t = wait_for(lambda: next((r for r in n.rows("support_tickets") if r["message"] == message.strip()), None),
+                 "the ticket")
+    msg = wait_for(lambda: mock_log("telegram"), "the Telegram message")[-1]
+    return t, msg
 
 
 def ticket(ticket_id):
     return next(r for r in n.rows("support_tickets") if r["ticket_id"] == ticket_id)
 
 
-def approval_link():
-    text = mock_log("telegram")[-1]["text"]
-    return text.split("Approve, edit or reject: ", 1)[1].strip()
+def review_link(msg):
+    # Shown as copyable text: Telegram does not make localhost links clickable.
+    return html.unescape(re.search(r"<code>([^<]+)</code>", msg["text"]).group(1)).replace("localhost", "127.0.0.1")
+
+
+def review(link, reply=None, decision="Send this reply", token=None):
+    """A person submits the review form opened from Telegram (fields: ticket, token, reply, decision)."""
+    q = {k: v[0] for k, v in parse_qs(urlparse(link).query).items()}
+    reset_mock_log()
+    post_form(link, [q["ticket_id"], token if token is not None else q["token"],
+                     q["Reply to send"] if reply is None else reply, decision])
+    return wait_for(lambda: mock_log("telegram"), "the confirmation")[-1]["text"]
 
 
 @test
-def support_setup_is_idempotent():
+def support_setup_creates_the_table():
+    drop_table(n, "support_tickets")
     for _ in range(2):
         ex = n.run(n.prepare(f"{SUPPORT}/0-create-table.json"), "Run once")
         assert ex.status == "success", ex.summary()
-    n.clear("support_tickets")
 
 
 @test
-def support_draft_waits_then_is_sent_as_is():
-    ex = request("Hello, where is my order? It was due last week.")
-    assert ex.status == "waiting", ex.summary()
-    tid = ex.items("Save the ticket")[0]["ticket_id"]
-    t = ticket(tid)
+def support_draft_then_human_sends_it_as_is():
+    open_forms()
+    t, msg = request("Hello, where is my order? It was due last week.")
     assert t["route"] == "needs_approval" and t["category"] == "order_status" and t["draft_reply"]
-    assert t["decision"] == "", "nothing is decided before the human answers"
-    msg = mock_log("telegram")[-1]["text"]
-    assert "Draft reply:" in msg and "/form-waiting/" in msg and "signature=" in msg
-    submit_form(approval_link(), {"field-0": "Send as is", "field-1": ""})
-    ex = n.wait(ex.id, until=("success", "error", "crashed"))
-    assert ex.status == "success", ex.summary()
-    t = ticket(tid)
+    assert t["decision"] == "" and len(t["review_token"]) >= 24, "nothing is decided before a human answers"
+    assert msg["parse_mode"] == "HTML" and "Draft reply:" in msg["text"]
+    link = review_link(msg)
+    page = urllib.request.urlopen(link).read().decode()
+    assert "confirm the email used" in page, "the review form must be pre-filled with the draft"
+    confirmation = review(link)
+    assert confirmation.startswith("✅ Reply approved as drafted"), confirmation
+    t = ticket(t["ticket_id"])
     assert t["decision"] == "sent_as_is" and t["edited"] == "no" and t["final_reply"] == t["draft_reply"]
-    assert ex.ran("Send the reply (connect Gmail or SMTP here)")
 
 
 @test
-def support_edit_without_text_is_not_sent():
-    ex = request("Hello, where is my order? Thanks.")
-    tid = ex.items("Save the ticket")[0]["ticket_id"]
-    submit_form(approval_link(), {"field-0": "Send my edited version", "field-1": ""})
-    ex = n.wait(ex.id, until=("success", "error", "crashed"))
-    assert ex.status == "success", ex.summary()
-    assert ticket(tid)["decision"] == "rejected"
-    assert not ex.ran("Send the reply (connect Gmail or SMTP here)")
+def support_review_link_is_single_use_and_needs_the_token():
+    t, msg = request("Hi, where is my order please?")
+    link = review_link(msg)
+    assert "wrong or missing token" in review(link, token="guessed-token")
+    assert ticket(t["ticket_id"])["decision"] == "", "a wrong token must not record anything"
+    edited = "Hello Awa, your order left the warehouse yesterday. The support team"
+    assert review(link, reply=edited).startswith("✅ Reply approved with your edits")
+    t = ticket(t["ticket_id"])
+    assert t["decision"] == "sent_edited" and t["edited"] == "yes" and t["final_reply"] == edited
+    assert "already decided" in review(link, reply="Another reply that must not be stored")
+    assert ticket(t["ticket_id"])["final_reply"] == edited
 
 
 @test
-def support_edited_reply_is_stored():
-    ex = request("Hi, where is my order please?")
-    tid = ex.items("Save the ticket")[0]["ticket_id"]
-    submit_form(approval_link(), {"field-0": "Send my edited version",
-                                  "field-1": "Hello Awa, your order left the warehouse yesterday. The support team"})
-    ex = n.wait(ex.id, until=("success", "error", "crashed"))
-    t = ticket(tid)
-    assert t["decision"] == "sent_edited" and t["edited"] == "yes" and "warehouse" in t["final_reply"]
+def support_reject_and_empty_reply_are_not_sent():
+    t1, msg1 = request("Hello, where is my order? Thanks.")
+    assert "rejected" in review(review_link(msg1), decision="Reject - I will handle it myself")
+    t2, msg2 = request("Hello, where is my order? Thank you.")
+    review(review_link(msg2), reply="ok")
+    for t in (t1, t2):
+        row = ticket(t["ticket_id"])
+        assert row["decision"] == "rejected" and row["final_reply"] == ""
 
 
 @test
 def support_refund_goes_to_a_human_without_draft():
-    ex = request("Bonjour, je veux être remboursé, le colis est arrivé abîmé. <b>vite</b> & merci_bien",
-                 name="Awa_T <admin>")
-    assert ex.status == "success", ex.summary()
-    t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
+    t, sent = request("Bonjour, je veux être remboursé, le colis est arrivé abîmé. <b>vite</b> & merci_bien",
+                      name="Awa_T <admin>")
     assert t["route"] == "human_only" and t["category"] == "refund" and t["draft_reply"] == ""
     assert "sensitive topic" in t["route_reason"]
-    assert not ex.ran("Wait for the human decision")
-    sent = mock_log("telegram")[-1]
     msg = sent["text"]
-    assert "needs a person" in msg and "Draft" not in msg
+    assert "needs a person" in msg and "Draft" not in msg and "<code>" not in msg
     assert sent["parse_mode"] == "HTML" and "&lt;b&gt;vite&lt;/b&gt; &amp; merci_bien" in msg
     assert "Awa_T &lt;admin&gt;" in msg
 
 
 @test
 def support_risky_promise_is_blocked():
-    ex = request("Hello, which sticker size would you recommend for a laptop?")
-    t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
+    t, _ = request("Hello, which sticker size would you recommend for a laptop?")
     assert t["category"] == "product_question" and t["route"] == "human_only", t
     assert "money" in t["route_reason"] and t["draft_reply"] == ""
 
 
 @test
 def support_low_confidence_goes_to_a_human():
-    ex = request("I am not sure what to ask, something about my account maybe?")
-    t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
+    t, _ = request("I am not sure what to ask, something about my account maybe?")
     assert t["route"] == "human_only" and "not confident" in t["route_reason"]
 
 
 @test
 def support_ai_down_still_reaches_a_human():
-    ex = request("Hello, where is my order?", gemini_url="=http://127.0.0.1:9/down")
-    assert ex.status == "success", ex.summary()
-    t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
+    open_forms(gemini_url="=http://127.0.0.1:9/down")
+    t, msg = request("Hello, where is my order? (AI down)")
     assert t["route"] == "human_only" and t["route_reason"].startswith("Gemini call failed")
-    assert "needs a person" in mock_log("telegram")[-1]["text"]
+    assert "needs a person" in msg["text"]
 
 
 @test
 def support_paused_drafting_sends_everything_to_a_human():
-    ex = request("Hello, where is my order?", drafting_enabled=False)
-    assert ex.status == "success", ex.summary()
-    t = ticket(ex.items("Save the ticket")[0]["ticket_id"])
+    open_forms(drafting_enabled=False)
+    t, _ = request("Hello, where is my order? (paused)")
     assert t["route"] == "human_only" and "paused" in t["route_reason"] and t["draft_reply"] == ""
 
 
@@ -279,12 +322,14 @@ def ticket_row(i, route, decision, minutes=10, category="order_status"):
     return {"ticket_id": f"T-{i}", "received_at": "2026-09-20T00:00:00Z", "customer_name": "x",
             "customer_email": "x@example.com", "order_number": "", "message": "m", "category": category,
             "urgency": "normal", "language": "en", "ai_confidence": 0.9, "route": route, "route_reason": "",
+            "review_token": "t",
             "draft_reply": "d", "decision": decision, "final_reply": "", "edited": "", "decided_at": "",
             "minutes_to_decision": minutes, "model": "m"}
 
 
 @test
 def support_report_pauses_drafting_when_rejected():
+    deactivate_all(n)
     n.clear("support_tickets")
     insert_rows(n, "support_tickets", [
         ticket_row(1, "needs_approval", "sent_as_is", 5),

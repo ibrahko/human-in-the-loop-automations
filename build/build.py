@@ -394,6 +394,7 @@ def job_offer_report():
 
 TICKET_COLUMNS = [
     ("ticket_id", "string"),
+    ("review_token", "string"),
     ("received_at", "string"),
     ("customer_name", "string"),
     ("customer_email", "string"),
@@ -422,6 +423,29 @@ DECISION_COLUMNS = [
     ("minutes_to_decision", "number"),
 ]
 
+REVIEW_PATH = "support-review"
+
+
+def if_node(w, name, left, op, right, x, y):
+    cond = {"id": nid(w.wid, name), "leftValue": left, "operator": op}
+    if right is not None:
+        cond["rightValue"] = right
+    return w.node(
+        name,
+        "n8n-nodes-base.if",
+        2.2,
+        {
+            "conditions": {
+                "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict", "version": 2},
+                "conditions": [cond],
+                "combinator": "and",
+            },
+            "options": {},
+        },
+        x,
+        y,
+    )
+
 
 def support_setup():
     w = WF("hitlSupSetup0001", "Support — 0. Create the table", "Run once before the intake workflow.")
@@ -430,7 +454,7 @@ def support_setup():
     w.chain("Run once", "Create support_tickets table")
     w.note(
         "About",
-        "## Run this once\nCreates the `support_tickets` data table used by the intake and report workflows. "
+        "## Run this once\nCreates the `support_tickets` data table used by the support workflows. "
         "Running it again does nothing if the table already exists.",
         -40, -300, 420, 200,
     )
@@ -440,9 +464,9 @@ def support_setup():
 def support_intake():
     w = WF(
         "hitlSupIntake001",
-        "Support — 1. Intake and approval (AI drafts, a human decides)",
+        "Support — 1. Intake (AI drafts, a human decides)",
         "Classifies each customer request with Gemini and drafts a reply. Sensitive topics go straight to a human; "
-        "every other draft waits for a person to approve, edit or reject it.",
+        "every other draft is sent to a person with a link to the review form (workflow 3).",
     )
     w.node(
         "Customer request form",
@@ -483,10 +507,10 @@ def support_intake():
             "model": "gemini-3.5-flash-lite",
             "telegram_chat_id": "PUT_YOUR_TELEGRAM_CHAT_ID_HERE",
             "company_name": "Demo Shop",
+            "n8n_url": "http://localhost:5678",
             "drafting_enabled": True,
             "min_confidence": 0.7,
             "human_only_categories": ["refund", "complaint"],
-            "hours_to_decide": 48,
         },
     )
     code(w, "Prepare the ticket", "support_prepare.js", 480, 100, per_item=True)
@@ -507,28 +531,8 @@ def support_intake():
         1440,
         100,
     )
-    w.node(
-        "Can a draft be proposed?",
-        "n8n-nodes-base.if",
-        2.2,
-        {
-            "conditions": {
-                "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict", "version": 2},
-                "conditions": [
-                    {
-                        "id": nid("hitlSupIntake001", "cond-route"),
-                        "leftValue": "={{ $json.route }}",
-                        "rightValue": "needs_approval",
-                        "operator": {"type": "string", "operation": "equals"},
-                    }
-                ],
-                "combinator": "and",
-            },
-            "options": {},
-        },
-        1680,
-        100,
-    )
+    if_node(w, "Can a draft be proposed?", "={{ $json.route }}",
+            {"type": "string", "operation": "equals"}, "needs_approval", 1680, 100)
     telegram(
         w,
         "Ask a human to approve",
@@ -537,7 +541,8 @@ def support_intake():
         "From: {{ $('Apply the guardrails').item.json.html.name }}\n\n"
         "<b>Customer wrote:</b>\n{{ $('Apply the guardrails').item.json.html.message }}\n\n"
         "<b>Draft reply:</b>\n{{ $('Apply the guardrails').item.json.html.draft }}\n\n"
-        "Approve, edit or reject: {{ $execution.resumeFormUrl }}",
+        "👉 <b>Review: send, edit or reject.</b> Tap the link to copy it, then open it in the browser "
+        "of the computer that runs n8n:\n<code>{{ $('Apply the guardrails').item.json.html.review_link }}</code>",
         1920,
         0,
     )
@@ -553,47 +558,105 @@ def support_intake():
         1920,
         240,
     )
+    w.chain("Customer request form", "Config", "Prepare the ticket", "Build the Gemini request",
+            "Ask Gemini to classify and draft", "Apply the guardrails", "Save the ticket",
+            "Can a draft be proposed?")
+    w.link("Can a draft be proposed?", "Ask a human to approve", out=0)
+    w.link("Can a draft be proposed?", "Hand over to a human", out=1)
+
+    w.note(
+        "How it works",
+        "## Support — AI drafts, a human decides\n"
+        "1. A customer fills in the form at `/form/support`.\n"
+        "2. Gemini classifies the request and drafts a reply in the customer's language.\n"
+        "3. **Apply the guardrails** sends refunds, complaints, low-confidence answers and any draft that "
+        "promises money or dates straight to a human, with no draft.\n"
+        "4. Other drafts go to Telegram with a one-time link to the review form (workflow **3. Review a draft**).\n"
+        "5. The customer only ever sees the thank-you page. Nothing reaches them without a human decision.",
+        -60, -460, 600, 400,
+    )
+    return w
+
+
+def support_review():
+    w = WF(
+        "hitlSupReview001",
+        "Support — 3. Review a draft (the human decision)",
+        "The review form a person opens from Telegram: send the reply (edited or not) or reject it. "
+        "Checks the one-time token, records the decision and confirms on Telegram.",
+    )
     w.node(
-        "Wait for the human decision",
-        "n8n-nodes-base.wait",
-        1.1,
+        "Review form",
+        "n8n-nodes-base.formTrigger",
+        2.3,
         {
-            "resume": "form",
-            "formTitle": "=Review the reply to ticket {{ $('Save the ticket').item.json.ticket_id }}",
-            "formDescription": "=Customer message:\n{{ $('Save the ticket').item.json.message }}\n\n"
-            "Proposed reply:\n{{ $('Save the ticket').item.json.draft_reply }}",
+            "formTitle": "Review the reply",
+            "formDescription": "Read the customer's message in Telegram. Edit the reply below if needed, "
+            "then send it or reject it. Nothing is sent to the customer without this decision.",
             "formFields": {
                 "values": [
+                    {"fieldType": "hiddenField", "fieldName": "ticket_id"},
+                    {"fieldType": "hiddenField", "fieldName": "token"},
+                    {"fieldLabel": "Reply to send", "fieldType": "textarea", "requiredField": True},
                     {
                         "fieldLabel": "Decision",
                         "fieldType": "dropdown",
                         "fieldOptions": {
                             "values": [
-                                {"option": "Send as is"},
-                                {"option": "Send my edited version"},
+                                {"option": "Send this reply"},
                                 {"option": "Reject - I will handle it myself"},
                             ]
                         },
                         "requiredField": True,
                     },
-                    {
-                        "fieldLabel": "Edited reply",
-                        "fieldType": "textarea",
-                        "placeholder": "Only if you chose to send your edited version",
-                    },
                 ]
             },
-            "limitWaitTime": True,
-            "limitType": "afterTimeInterval",
-            "resumeAmount": "={{ $('Config').first().json.hours_to_decide }}",
-            "resumeUnit": "hours",
-            "options": {},
+            "responseMode": "onReceived",
+            "options": {
+                "path": REVIEW_PATH,
+                "appendAttribution": False,
+                "respondWithOptions": {
+                    "values": {
+                        "respondWith": "text",
+                        "formSubmittedText": "Decision received. The result is confirmed on Telegram.",
+                    }
+                },
+            },
         },
-        2160,
         0,
-        webhookId=nid("hitlSupIntake001", "wait-webhook"),
+        100,
+        webhookId=nid("hitlSupReview001", "form-webhook"),
     )
-    code(w, "Record the decision", "support_decision.js", 2400, 0, per_item=True)
+    config(w, 240, 100, {"telegram_chat_id": "PUT_YOUR_TELEGRAM_CHAT_ID_HERE", "hours_to_decide": 48})
+    w.node(
+        "Find the ticket",
+        "n8n-nodes-base.dataTable",
+        1.1,
+        {
+            "resource": "row",
+            "operation": "get",
+            "dataTableId": table_ref("support_tickets"),
+            "matchType": "allConditions",
+            "filters": {
+                "conditions": [
+                    {
+                        "keyName": "ticket_id",
+                        "condition": "eq",
+                        "keyValue": "={{ $('Review form').first().json.ticket_id || "
+                        "($('Review form').first().json.formQueryParameters || {}).ticket_id || 'none' }}",
+                    }
+                ]
+            },
+            "limit": 1,
+        },
+        480,
+        100,
+        alwaysOutputData=True,
+    )
+    code(w, "Check the link and decide", "support_review.js", 720, 100)
+    telegram(w, "Confirm on Telegram", "={{ $json.message }}", 960, 100)
+    if_node(w, "Link valid?", "={{ $('Check the link and decide').item.json.valid }}",
+            {"type": "boolean", "operation": "true", "singleValue": True}, None, 1200, 100)
     w.node(
         "Update the ticket",
         "n8n-nodes-base.dataTable",
@@ -605,71 +668,37 @@ def support_intake():
             "matchType": "allConditions",
             "filters": {
                 "conditions": [
-                    {"keyName": "ticket_id", "condition": "eq", "keyValue": "={{ $json.ticket_id }}"}
+                    {"keyName": "ticket_id", "condition": "eq",
+                     "keyValue": "={{ $('Check the link and decide').item.json.ticket_id }}"}
                 ]
             },
-            "columns": columns(DECISION_COLUMNS),
+            "columns": columns(DECISION_COLUMNS, "$('Check the link and decide').item.json"),
             "options": {},
         },
-        2640,
+        1440,
         0,
     )
-    w.node(
-        "Reply approved?",
-        "n8n-nodes-base.if",
-        2.2,
-        {
-            "conditions": {
-                "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict", "version": 2},
-                "conditions": [
-                    {
-                        "id": nid("hitlSupIntake001", "cond-send"),
-                        "leftValue": "={{ $('Record the decision').item.json.send }}",
-                        "rightValue": True,
-                        "operator": {"type": "boolean", "operation": "true", "singleValue": True},
-                    }
-                ],
-                "combinator": "and",
-            },
-            "options": {},
-        },
-        2880,
-        0,
-    )
-    w.node(
-        "Send the reply (connect Gmail or SMTP here)",
-        "n8n-nodes-base.noOp",
-        1,
-        {},
-        3120,
-        -80,
-    )
-
-    w.chain("Customer request form", "Config", "Prepare the ticket", "Build the Gemini request",
-            "Ask Gemini to classify and draft", "Apply the guardrails", "Save the ticket",
-            "Can a draft be proposed?")
-    w.link("Can a draft be proposed?", "Ask a human to approve", out=0)
-    w.link("Can a draft be proposed?", "Hand over to a human", out=1)
-    w.chain("Ask a human to approve", "Wait for the human decision", "Record the decision",
-            "Update the ticket", "Reply approved?")
+    if_node(w, "Reply approved?", "={{ $('Check the link and decide').item.json.send }}",
+            {"type": "boolean", "operation": "true", "singleValue": True}, None, 1680, 0)
+    w.node("Send the reply (connect Gmail or SMTP here)", "n8n-nodes-base.noOp", 1, {}, 1920, -80)
+    w.chain("Review form", "Config", "Find the ticket", "Check the link and decide", "Confirm on Telegram",
+            "Link valid?")
+    w.link("Link valid?", "Update the ticket", out=0)
+    w.link("Update the ticket", "Reply approved?")
     w.link("Reply approved?", "Send the reply (connect Gmail or SMTP here)", out=0)
-
     w.note(
         "How it works",
-        "## Support — AI drafts, a human decides\n"
-        "1. A customer fills in the form (open it from the **Customer request form** node).\n"
-        "2. Gemini classifies the request and drafts a reply in the customer's language.\n"
-        "3. **Apply the guardrails** sends refunds, complaints, low-confidence answers and any draft that "
-        "promises money or dates straight to a human, with no draft.\n"
-        "4. Other drafts go to Telegram with a link to a review form: send as is, edit, or reject.\n"
-        "5. Nothing reaches the customer without a human decision. Every step is stored in `support_tickets`.",
-        -60, -460, 600, 400,
+        "## The human decision\n"
+        "The Telegram message of workflow 1 links here with the ticket id, a one-time token and the draft "
+        "pre-filled. **Check the link and decide** refuses unknown tickets, wrong tokens, tickets already "
+        "decided and links older than `hours_to_decide`. Only then is the decision stored.",
+        -60, -380, 560, 300,
     )
     w.note(
         "Outbound",
         "### Sending the reply\nThis demo stops here on purpose. Replace this node with a Gmail or SMTP "
-        "node when you connect a real mailbox.",
-        3040, -340, 360, 200, color=3,
+        "node when you connect a real mailbox. It receives `customer_email` and `final_reply`.",
+        1840, -360, 380, 220, color=3,
     )
     return w
 
@@ -694,7 +723,7 @@ def support_report():
         240,
         100,
         {"telegram_chat_id": "PUT_YOUR_TELEGRAM_CHAT_ID_HERE", "window_days": 28, "min_decisions": 20,
-         "max_reject_rate": 0.3},
+         "max_reject_rate": 0.3, "hours_to_decide": 48},
     )
     w.node(
         "Get all tickets",
@@ -728,6 +757,7 @@ def main():
         "support-assistant/workflows/0-create-table.json": support_setup(),
         "support-assistant/workflows/1-intake-and-approval.json": support_intake(),
         "support-assistant/workflows/2-weekly-report.json": support_report(),
+        "support-assistant/workflows/3-review-a-draft.json": support_review(),
     }
     for rel, wf in out.items():
         wf.dump(ROOT / rel)

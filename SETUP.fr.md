@@ -22,15 +22,15 @@ Chaque clic, dans l'ordre. Ce guide a été écrit en faisant vraiment l'install
 4. Créez votre compte n8n. Il reste sur votre ordinateur.
 5. **Si une fenêtre "Connect a model" apparaît** (l'assistant de n8n, qui demande une clé Anthropic), fermez-la avec le ✕. Ces workflows n'en ont pas besoin, et c'est un service payant.
 
-## 2. Importer les six workflows
+## 2. Importer les sept workflows
 
 1. Dans le même terminal, lancez :
    ```
    docker compose exec n8n n8n import:workflow --separate --input=/import/job-offer-triage
    docker compose exec n8n n8n import:workflow --separate --input=/import/support-assistant
    ```
-2. Chaque commande doit afficher `Successfully imported 3 workflows`.
-3. Rechargez la page de n8n. Dans **Overview → Workflows** (vue d'ensemble → workflows), vous voyez maintenant six workflows : trois qui commencent par "Job offers" et trois par "Support".
+2. Les commandes doivent afficher `Successfully imported 3 workflows` et `Successfully imported 4 workflows`.
+3. Rechargez la page de n8n. Dans **Overview → Workflows** (vue d'ensemble → workflows), vous voyez maintenant sept workflows : trois qui commencent par "Job offers" et quatre par "Support".
 
 > ⚠️ **Importer à nouveau remplace les workflows.** Vos choix d'identifiants et vos valeurs dans **Config** sont perdus. Refaites les étapes 6 et 8 après chaque nouvel import. Vos tables de données et vos identifiants eux-mêmes sont conservés.
 
@@ -110,28 +110,31 @@ Si un nœud passe au rouge, cliquez dessus et lisez le message. Causes fréquent
 ## 9. Configurer l'assistant support
 
 1. Lancez une fois **Support — 0. Create the table**.
-2. Ouvrez **Support — 1. Intake and approval**.
-3. Choisissez vos identifiants dans trois nœuds :
-   - **Ask Gemini to classify and draft** (demander à Gemini de classer et de rédiger) : l'identifiant Gemini ;
-   - **Ask a human to approve** (demander la validation d'un humain) : l'identifiant Telegram ;
-   - **Hand over to a human** (passer la main à un humain) : l'identifiant Telegram.
-4. Dans **Config** :
-   - renseignez `telegram_chat_id` ;
-   - renseignez `company_name` ;
-   - laissez `drafting_enabled` à `true`.
-5. Enregistrez, puis cliquez sur **Publish**.
-6. Ouvrez le formulaire sur http://localhost:5678/form/support et envoyez une demande de test, par exemple "Hello, where is my order?".
-7. Sur Telegram, vous recevez le brouillon avec un lien de relecture.
-   - Ouvrez le lien **sur l'ordinateur qui fait tourner n8n**, car il pointe vers `localhost`.
-   - Choisissez *Send as is* (envoyer tel quel), *Send my edited version* (envoyer ma version modifiée) ou *Reject* (rejeter).
-8. Essayez aussi une demande de remboursement, par exemple "I want a refund". Elle doit arriver comme "needs a person" (à traiter par une personne), sans brouillon.
-9. Dans **Support — 2. Weekly report**, renseignez le chat id, choisissez l'identifiant Telegram, puis cliquez sur **Publish**.
+2. Ouvrez **Support — 1. Intake** :
+   - choisissez l'identifiant Gemini dans **Ask Gemini to classify and draft** (demander à Gemini de classer et de rédiger) ;
+   - choisissez l'identifiant Telegram dans **Ask a human to approve** (demander la validation d'un humain) et dans **Hand over to a human** (passer la main à un humain) ;
+   - dans **Config**, renseignez `telegram_chat_id` et `company_name`, et laissez `drafting_enabled` à `true` ;
+   - enregistrez, puis cliquez sur **Publish**.
+3. Ouvrez **Support — 3. Review a draft** :
+   - choisissez l'identifiant Telegram dans **Confirm on Telegram** (confirmer sur Telegram) ;
+   - dans **Config**, renseignez `telegram_chat_id` ;
+   - enregistrez, puis cliquez sur **Publish**.
+4. Ouvrez le formulaire client sur http://localhost:5678/form/support et envoyez une demande de test, par exemple "Hello, where is my order?". Vous voyez "Thank you…". C'est tout ce que le client verra jamais.
+5. Sur Telegram, vous recevez le brouillon et, sous **"Review: send, edit or reject"** (relire : envoyer, modifier ou rejeter), un lien affiché en texte gris. Telegram ne rend pas cliquables les liens vers `localhost` : touchez le lien pour le copier, puis collez-le dans le navigateur.
+   - Ouvrez-le **sur l'ordinateur qui fait tourner n8n**, car il pointe vers `localhost`.
+   - Le formulaire est prérempli avec le brouillon. Modifiez-le si vous voulez, choisissez *Send this reply* (envoyer cette réponse) ou *Reject* (rejeter), puis validez.
+   - Telegram confirme : "✅ Reply approved…" (réponse approuvée) ou "🚫 Draft rejected…" (brouillon rejeté).
+   - Ouvrir le même lien une deuxième fois est refusé : chaque lien ne fonctionne qu'une fois.
+6. Essayez aussi une demande de remboursement, par exemple "I want a refund". Elle doit arriver comme "needs a person" (à traiter par une personne), sans brouillon et sans lien.
+7. Dans **Support — 2. Weekly report**, renseignez le chat id, choisissez l'identifiant Telegram, puis cliquez sur **Publish**.
+
+> Vous passez de la première version (avec "Wait for the human decision") ? La table a besoin d'une nouvelle colonne. Ouvrez **Overview → Data tables**, supprimez `support_tickets`, relancez **Support — 0. Create the table**, puis refaites les étapes 2 et 3.
 
 ## 10. Passer à une nouvelle version
 
 1. Récupérez les nouveaux fichiers, avec `git pull` ou en copiant le nouveau dossier.
 2. Relancez les deux commandes d'import de l'étape 2.
-3. Refaites les étapes 6.3 à 6.6, 7.3 à 7.4 et 9.3 à 9.4 : choisissez à nouveau les identifiants et remplissez à nouveau les valeurs de **Config**.
+3. Refaites les étapes 6.3 à 6.6, 7.3 à 7.4 et 9.2 à 9.3 : choisissez à nouveau les identifiants et remplissez à nouveau les valeurs de **Config**.
 
 ## 11. Arrêter n8n
 

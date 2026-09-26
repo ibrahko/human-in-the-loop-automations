@@ -52,8 +52,15 @@ if (!cfg.drafting_enabled) {
 }
 
 // Escaped copies for the Telegram messages (sent as HTML).
-const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const draft = route === 'needs_approval' ? String(ai.draft_reply).slice(0, 2000) : '';
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const draft = route === 'needs_approval' ? String(ai.draft_reply).slice(0, 1500) : '';
+// Link to the review form (workflow 3): ticket id, one-time token, and the draft pre-filled for editing.
+// Telegram does not make localhost links clickable, so the link is shown as text to copy.
+// The pre-filled draft is dropped if it would make the link too long for a Telegram message.
+const baseLink = `${String(cfg.n8n_url).replace(/\/$/, '')}/form/support-review` +
+  `?ticket_id=${encodeURIComponent(t.ticket_id)}&token=${encodeURIComponent(t.review_token)}`;
+const prefill = `&${encodeURIComponent('Reply to send')}=${encodeURIComponent(draft)}`;
+const reviewLink = baseLink.length + prefill.length <= 1800 ? baseLink + prefill : baseLink;
 
 return {
   json: {
@@ -80,6 +87,7 @@ return {
       message: esc(t.message.slice(0, 1500)),
       draft: esc(draft),
       reason: esc(reason),
+      review_link: esc(reviewLink),
     },
   },
 };

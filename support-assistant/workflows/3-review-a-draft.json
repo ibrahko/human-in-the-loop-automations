@@ -1,0 +1,437 @@
+{
+  "id": "hitlSupReview001",
+  "name": "Support — 3. Review a draft (the human decision)",
+  "description": "The review form a person opens from Telegram: send the reply (edited or not) or reject it. Checks the one-time token, records the decision and confirms on Telegram.",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Review the reply",
+        "formDescription": "Read the customer's message in Telegram. Edit the reply below if needed, then send it or reject it. Nothing is sent to the customer without this decision.",
+        "formFields": {
+          "values": [
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "ticket_id"
+            },
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "token"
+            },
+            {
+              "fieldLabel": "Reply to send",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Send this reply"
+                  },
+                  {
+                    "option": "Reject - I will handle it myself"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "path": "support-review",
+          "appendAttribution": false,
+          "respondWithOptions": {
+            "values": {
+              "respondWith": "text",
+              "formSubmittedText": "Decision received. The result is confirmed on Telegram."
+            }
+          }
+        }
+      },
+      "id": "6ad089cf-256e-508d-aef6-8ed98a0f813b",
+      "name": "Review form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        100
+      ],
+      "webhookId": "aa1587db-25ee-5e12-a8a6-3bb4fedd83a2"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"telegram_chat_id\": \"PUT_YOUR_TELEGRAM_CHAT_ID_HERE\",\n  \"hours_to_decide\": 48\n}",
+        "options": {}
+      },
+      "id": "53f7fe7e-25fe-5101-848a-d18efdf37a82",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "support_tickets"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "ticket_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Review form').first().json.ticket_id || ($('Review form').first().json.formQueryParameters || {}).ticket_id || 'none' }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "3e5337a9-22de-55d6-902e-26bbd4e68d83",
+      "name": "Find the ticket",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// The human decision arrives from the review form. Check the link before recording anything:\n// the ticket must exist, the token must match, it must still wait for a decision, and not be too old.\nconst cfg = $('Config').first().json;\nconst form = $('Review form').first().json;\nconst q = form.formQueryParameters || {};\nconst ticketId = String(form.ticket_id || q.ticket_id || '');\nconst token = String(form.token || q.token || '');\nconst ticket = $input.all().map((i) => i.json).find((r) => r.ticket_id === ticketId);\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst refuse = (why) => [{\n  json: { valid: false, send: false, ticket_id: ticketId, message: `⛔ Review refused for ticket ${esc(ticketId || '?')}: ${why}. Nothing was sent.` },\n}];\n\nif (!ticket) return refuse('unknown ticket');\nif (!ticket.review_token || ticket.review_token !== token) return refuse('wrong or missing token');\nif (ticket.route !== 'needs_approval') return refuse('this ticket is handled by a person only');\nif (ticket.decision) return refuse(`already decided (${ticket.decision})`);\n\nconst now = new Date();\nconst minutes = Math.round((now - new Date(ticket.received_at)) / 60000);\nconst reply = String(form['Reply to send'] || '').trim();\nconst choice = String(form['Decision'] || '');\n\nlet decision;\nif (minutes > cfg.hours_to_decide * 60) decision = 'expired';\nelse if (choice.startsWith('Reject')) decision = 'rejected';\nelse if (choice === 'Send this reply' && reply.length >= 10) {\n  decision = reply === String(ticket.draft_reply).trim() ? 'sent_as_is' : 'sent_edited';\n} else decision = 'rejected'; // an empty or near-empty reply is never sent\n\nconst send = decision === 'sent_as_is' || decision === 'sent_edited';\nconst labels = {\n  sent_as_is: '✅ Reply approved as drafted',\n  sent_edited: '✅ Reply approved with your edits',\n  rejected: '🚫 Draft rejected: handle this customer yourself',\n  expired: `⌛ Link expired (older than ${cfg.hours_to_decide} h): not sent, handle it yourself`,\n};\n\nreturn [{\n  json: {\n    valid: true,\n    send,\n    ticket_id: ticket.ticket_id,\n    customer_email: ticket.customer_email,\n    decision,\n    final_reply: send ? reply : '',\n    edited: decision === 'sent_edited' ? 'yes' : decision === 'sent_as_is' ? 'no' : '',\n    decided_at: now.toISOString(),\n    minutes_to_decision: minutes,\n    message: `${labels[decision]} — ticket ${esc(ticket.ticket_id)} (${esc(ticket.customer_name)}).`,\n  },\n}];\n"
+      },
+      "id": "d69d4592-3aaa-5dfc-86fa-6ffce848ede5",
+      "name": "Check the link and decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Config').first().json.telegram_chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "6329d7f3-b835-5637-bd1d-b99ae133e938",
+      "name": "Confirm on Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "96584e37-b782-57e8-846b-91119d0bc059",
+              "leftValue": "={{ $('Check the link and decide').item.json.valid }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "96584e37-b782-57e8-846b-91119d0bc059",
+      "name": "Link valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "support_tickets"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "ticket_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Check the link and decide').item.json.ticket_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "decision": "={{ $('Check the link and decide').item.json.decision }}",
+            "final_reply": "={{ $('Check the link and decide').item.json.final_reply }}",
+            "edited": "={{ $('Check the link and decide').item.json.edited }}",
+            "decided_at": "={{ $('Check the link and decide').item.json.decided_at }}",
+            "minutes_to_decision": "={{ $('Check the link and decide').item.json.minutes_to_decision }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_reply",
+              "displayName": "final_reply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "edited",
+              "displayName": "edited",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decided_at",
+              "displayName": "decided_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "minutes_to_decision",
+              "displayName": "minutes_to_decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b9932a87-04de-5ebd-8c8c-4944343ec018",
+      "name": "Update the ticket",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ccc60645-cc83-5108-a4e0-3e7781fcd6ed",
+              "leftValue": "={{ $('Check the link and decide').item.json.send }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ccc60645-cc83-5108-a4e0-3e7781fcd6ed",
+      "name": "Reply approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6fe70d52-2fbe-5a86-a5f3-a4d9e3c46503",
+      "name": "Send the reply (connect Gmail or SMTP here)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## The human decision\nThe Telegram message of workflow 1 links here with the ticket id, a one-time token and the draft pre-filled. **Check the link and decide** refuses unknown tickets, wrong tokens, tickets already decided and links older than `hours_to_decide`. Only then is the decision stored.",
+        "height": 300,
+        "width": 560
+      },
+      "id": "f13d8c07-10f4-5156-99be-e30e2c531145",
+      "name": "How it works",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Sending the reply\nThis demo stops here on purpose. Replace this node with a Gmail or SMTP node when you connect a real mailbox. It receives `customer_email` and `final_reply`.",
+        "height": 220,
+        "width": 380,
+        "color": 3
+      },
+      "id": "68bff2d2-a4ea-59db-ad98-5c9290a1e86f",
+      "name": "Outbound",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        -360
+      ]
+    }
+  ],
+  "connections": {
+    "Review form": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Find the ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find the ticket": {
+      "main": [
+        [
+          {
+            "node": "Check the link and decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the link and decide": {
+      "main": [
+        [
+          {
+            "node": "Confirm on Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm on Telegram": {
+      "main": [
+        [
+          {
+            "node": "Link valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link valid?": {
+      "main": [
+        [
+          {
+            "node": "Update the ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update the ticket": {
+      "main": [
+        [
+          {
+            "node": "Reply approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply approved?": {
+      "main": [
+        [
+          {
+            "node": "Send the reply (connect Gmail or SMTP here)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

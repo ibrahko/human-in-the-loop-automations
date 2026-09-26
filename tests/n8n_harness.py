@@ -251,3 +251,38 @@ def submit_form(url: str, fields: dict[str, str]):
     r = urllib.request.Request(url.replace("localhost", "127.0.0.1"), data=body, method="POST",
                                headers={"content-type": f"multipart/form-data; boundary={boundary}"})
     return urllib.request.urlopen(r).read()
+
+
+def deactivate_all(n: N8n):
+    """Only one workflow can own a form path: switch off every active workflow first."""
+    for w in n.req("GET", "/rest/workflows")["data"]:
+        if w.get("active"):
+            n.req("POST", f"/rest/workflows/{w['id']}/deactivate", {})
+
+
+def activate(n: N8n, wf: dict) -> dict:
+    created = n.create(wf)
+    n.req("POST", f"/rest/workflows/{created['id']}/activate", {"versionId": created["versionId"]})
+    return created
+
+
+def post_form(url: str, fields: list[str]) -> str:
+    """Submit an n8n form the way the browser does: multipart, fields named field-0, field-1..."""
+    return submit_form(url, {f"field-{i}": v for i, v in enumerate(fields)}).decode()
+
+
+def drop_table(n: N8n, table: str):
+    wf = {
+        "name": f"drop {table}",
+        "nodes": [
+            {"parameters": {}, "id": "x1", "name": "Start", "type": "n8n-nodes-base.manualTrigger",
+             "typeVersion": 1, "position": [0, 0]},
+            {"parameters": {"resource": "table", "operation": "delete",
+                            "dataTableId": {"__rl": True, "mode": "name", "value": table}},
+             "id": "x2", "name": "Drop", "type": "n8n-nodes-base.dataTable", "typeVersion": 1.1,
+             "position": [200, 0]},
+        ],
+        "connections": {"Start": {"main": [[{"node": "Drop", "type": "main", "index": 0}]]}},
+        "settings": {"executionOrder": "v1"},
+    }
+    return n.run(wf, "Start")

@@ -39,7 +39,7 @@ Schedules use the time zone set in `docker-compose.yml` (`Africa/Bamako`). Chang
 
 ## How it is tested
 
-The six workflows are tested end to end against a real n8n instance (2.40.7), locally and on GitHub Actions. Gemini, Telegram and the RSS feeds are replaced by a local mock (`tests/mock_server.py`). The 17 end-to-end tests, plus a unit test of the risky-word list, cover:
+The seven workflows are tested end to end against a real n8n instance (2.40.7), locally and on GitHub Actions. Gemini, Telegram and the RSS feeds are replaced by a local mock (`tests/mock_server.py`). The 17 end-to-end tests, plus a unit test of the risky-word list, cover:
 
 - **Job offer triage:**
   - duplicates, stale offers and off-topic offers are dropped before any AI call;
@@ -49,8 +49,9 @@ The six workflows are tested end to end against a real n8n instance (2.40.7), lo
   - the per-run cap is respected;
   - the report pauses when agreement drops.
 - **Support assistant:**
-  - drafts wait for a human, and the form accepts "send as is", "edit" and "reject";
-  - an empty edit is not sent;
+  - the real forms are published and submitted like a browser does; the customer never sees the review form;
+  - drafts wait for a human; the review link needs its one-time token, works once, and records "as is", "edited" or "rejected";
+  - an empty reply is never sent;
   - refunds, risky promises, low confidence, an AI outage and paused drafting go to a person;
   - the report pauses drafting when too many drafts are rejected.
 

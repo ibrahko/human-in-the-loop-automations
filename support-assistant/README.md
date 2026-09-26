@@ -11,19 +11,24 @@ A customer fills in a contact form. Gemini classifies the request and drafts a r
 | The draft mentions money, a discount, a guarantee or a delivery date | Goes to a person, with no draft. The AI must not make promises. |
 | Gemini fails or answers badly | Goes to a person. A person is always notified. |
 | Drafting paused (`drafting_enabled = false`) | Everything goes to a person. |
-| Anything else | The draft is sent to Telegram with a link to a **review form**. |
+| Anything else | The draft is sent to Telegram with a one-time link to a **review form**, pre-filled with the draft. |
 
-The review form offers three choices: **send as is**, **send my edited version** or **reject**. Whatever you choose is recorded, and nothing reaches the customer without that choice. A draft left unanswered for 48 hours expires and is not sent.
+In the review form you edit the reply if needed, then choose **Send this reply** or **Reject**. Whatever you choose is recorded, and nothing reaches the customer without that choice. The customer only ever sees a thank-you page.
+
+The review link carries a one-time token. It is refused if the token is wrong, if the ticket was already decided, or if it is older than 48 hours (`hours_to_decide`).
 
 ![flow](../docs/support-assistant.png)
+
+![review](../docs/support-review.png)
 
 ## Workflows
 
 | File | Purpose |
 |---|---|
 | `workflows/0-create-table.json` | Creates the `support_tickets` data table. Run it once. |
-| `workflows/1-intake-and-approval.json` | `1. Intake and approval`: form, then AI, then guardrails, then human review. |
+| `workflows/1-intake-and-approval.json` | `1. Intake`: customer form, then AI, then guardrails, then Telegram. |
 | `workflows/2-weekly-report.json` | Monday report: drafts sent as is, edited or rejected, time to decide, kill switch. |
+| `workflows/3-review-a-draft.json` | `3. Review a draft`: the form a person opens from Telegram; checks the link and records the decision. |
 
 ## Setup
 
@@ -31,23 +36,24 @@ The detailed, click-by-click version is in [SETUP.md](../SETUP.md) (step 9).
 
 1. Create the same two credentials as for the job offer triage: `Gemini API key` (Header Auth, name `x-goog-api-key`) and your Telegram bot.
 2. Run `0. Create the table` once.
-3. In `1. Intake and approval`:
+3. In `1. Intake`:
    - select the credentials in the Gemini node and in both Telegram nodes;
    - in **Config**, set `telegram_chat_id`, `company_name` and, if needed, `min_confidence`;
    - then click **Publish** (top right).
-4. Open the form: click the **Customer request form** node and copy its *production URL* (`http://localhost:5678/form/support`).
-5. In `2. Weekly report`, select the Telegram credential, set the chat id in its **Config**, then publish it.
+4. In `3. Review a draft`: select the Telegram credential, set `telegram_chat_id` in **Config**, then **Publish**.
+5. The customer form is at `http://localhost:5678/form/support`.
+6. In `2. Weekly report`, select the Telegram credential, set the chat id in its **Config**, then publish it.
 
-**The review link only works on the computer that runs n8n,** and it acts like a password: anyone who has it can approve the reply. Do not forward it. It points to `localhost`, so open it in Telegram Desktop on that computer. To review from a phone, n8n must be reachable from the internet, for example with a hosted n8n or a tunnel. Only do that after setting up proper authentication.
+**The review link only works on the computer that runs n8n,** and it acts like a password: whoever has it can decide on that ticket, once. Do not forward it. It points to `localhost`, so open it in Telegram Desktop on that computer. To review from a phone, n8n must be reachable from the internet, for example with a hosted n8n or a tunnel. Only do that after setting up proper authentication.
 
 ## Sending the real reply
 
-The last node, **Send the reply (connect Gmail or SMTP here)**, does nothing, on purpose. Replace it with a Gmail or SMTP node when you connect a real mailbox. It receives `customer_email` and `final_reply`.
+The last node of `3. Review a draft`, **Send the reply (connect Gmail or SMTP here)**, does nothing, on purpose. Replace it with a Gmail or SMTP node when you connect a real mailbox. It receives `customer_email` and `final_reply`.
 
 ## What the weekly report measures
 
 - The share of requests handled by a person only (as a percentage).
-- For drafts: how many were sent as is, edited, rejected, or expired.
+- For drafts: how many were sent as is, edited, rejected, or expired (no decision within `hours_to_decide`).
 - The median time to a human decision.
 - The requests by category.
 

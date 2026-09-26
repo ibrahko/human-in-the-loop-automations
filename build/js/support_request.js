@@ -11,7 +11,7 @@ const prompt = [
   '- Never promise a refund, a discount, a compensation, a delivery date or anything not stated below.',
   '- Never invent order details. If information is missing, ask for it.',
   '- If you are unsure, say that a colleague will check and come back to them.',
-  '- No more than 120 words. Sign as "The support team".',
+  '- No more than 120 words. Sign as the support team, in the customer\'s language (for example "L\'équipe support" in French).',
   '',
   'Confidence: how sure you are that the category is right AND that the draft can be sent as is (0 to 1).',
   '',

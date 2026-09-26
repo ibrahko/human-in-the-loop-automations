@@ -30,6 +30,10 @@
               "type": "string"
             },
             {
+              "name": "review_token",
+              "type": "string"
+            },
+            {
               "name": "received_at",
               "type": "string"
             },
@@ -118,7 +122,7 @@
     },
     {
       "parameters": {
-        "content": "## Run this once\nCreates the `support_tickets` data table used by the intake and report workflows. Running it again does nothing if the table already exists.",
+        "content": "## Run this once\nCreates the `support_tickets` data table used by the support workflows. Running it again does nothing if the table already exists.",
         "height": 200,
         "width": 420
       },

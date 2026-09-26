@@ -39,7 +39,7 @@ Les planifications utilisent le fuseau horaire défini dans `docker-compose.yml`
 
 ## Comment c'est testé
 
-Les six workflows sont testés de bout en bout sur une vraie instance n8n (2.40.7), en local et sur GitHub Actions. Gemini, Telegram et les flux RSS sont remplacés par un serveur factice local (`tests/mock_server.py`). Les 17 tests de bout en bout, plus un test unitaire de la liste des mots à risque, couvrent :
+Les sept workflows sont testés de bout en bout sur une vraie instance n8n (2.40.7), en local et sur GitHub Actions. Gemini, Telegram et les flux RSS sont remplacés par un serveur factice local (`tests/mock_server.py`). Les 17 tests de bout en bout, plus un test unitaire de la liste des mots à risque, couvrent :
 
 - **Tri des offres d'emploi :**
   - les doublons, les offres trop anciennes et les offres hors sujet sont écartés avant tout appel à l'IA ;
@@ -49,8 +49,9 @@ Les six workflows sont testés de bout en bout sur une vraie instance n8n (2.40.
   - la limite par exécution est respectée ;
   - le rapport se met en pause quand le taux d'accord baisse.
 - **Assistant support :**
-  - les brouillons attendent un humain, et le formulaire accepte "send as is" (envoyer tel quel), "edit" (modifier) et "reject" (rejeter) ;
-  - une modification vide n'est pas envoyée ;
+  - les vrais formulaires sont publiés et remplis comme le ferait un navigateur ; le client ne voit jamais le formulaire de relecture ;
+  - les brouillons attendent un humain ; le lien de relecture exige son jeton à usage unique, ne fonctionne qu'une fois et enregistre "as is" (tel quel), "edited" (modifié) ou "rejected" (rejeté) ;
+  - une réponse vide n'est jamais envoyée ;
   - les remboursements, les promesses à risque, une confiance trop faible, une panne de l'IA et les brouillons suspendus vont à une personne ;
   - le rapport suspend les brouillons quand trop de brouillons sont rejetés.
 

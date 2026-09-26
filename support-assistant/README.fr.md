@@ -11,19 +11,24 @@ Un client remplit un formulaire de contact. Gemini classe la demande et rédige 
 | Le brouillon parle d'argent, de remise, de garantie ou de date de livraison | Va à une personne, sans brouillon. L'IA ne doit pas faire de promesses. |
 | Gemini échoue ou répond mal | Va à une personne. Une personne est toujours prévenue. |
 | Brouillons suspendus (`drafting_enabled = false`) | Tout va à une personne. |
-| Tout le reste | Le brouillon est envoyé sur Telegram avec un lien vers un **formulaire de relecture**. |
+| Tout le reste | Le brouillon est envoyé sur Telegram avec un lien à usage unique vers un **formulaire de relecture**, prérempli avec le brouillon. |
 
-Le formulaire de relecture propose trois choix : **send as is** (envoyer tel quel), **send my edited version** (envoyer ma version modifiée) ou **reject** (rejeter). Votre choix est enregistré, et rien n'arrive au client sans ce choix. Un brouillon resté sans réponse pendant 48 heures expire et n'est pas envoyé.
+Dans le formulaire de relecture, vous modifiez la réponse si besoin, puis vous choisissez **Send this reply** (envoyer cette réponse) ou **Reject** (rejeter). Votre choix est enregistré, et rien n'arrive au client sans ce choix. Le client ne voit jamais qu'une page de remerciement.
+
+Le lien de relecture contient un jeton à usage unique. Il est refusé si le jeton est faux, si le ticket a déjà été décidé, ou s'il a plus de 48 heures (`hours_to_decide`).
 
 ![flow](../docs/support-assistant.png)
+
+![review](../docs/support-review.png)
 
 ## Workflows
 
 | Fichier | Rôle |
 |---|---|
 | `workflows/0-create-table.json` | Crée la table de données `support_tickets`. À lancer une seule fois. |
-| `workflows/1-intake-and-approval.json` | `1. Intake and approval` : formulaire, puis IA, puis garde-fous, puis relecture humaine. |
+| `workflows/1-intake-and-approval.json` | `1. Intake` : formulaire client, puis IA, puis garde-fous, puis Telegram. |
 | `workflows/2-weekly-report.json` | Rapport du lundi : brouillons envoyés tels quels, modifiés ou rejetés, temps de décision, règle d'arrêt. |
+| `workflows/3-review-a-draft.json` | `3. Review a draft` : le formulaire qu'une personne ouvre depuis Telegram ; il vérifie le lien et enregistre la décision. |
 
 ## Configuration
 
@@ -31,23 +36,24 @@ La version détaillée, clic par clic, se trouve dans [SETUP.fr.md](../SETUP.fr.
 
 1. Créez les deux mêmes identifiants que pour le tri des offres d'emploi : `Gemini API key` (Header Auth, nom `x-goog-api-key`) et votre bot Telegram.
 2. Lancez `0. Create the table` une seule fois.
-3. Dans `1. Intake and approval` :
+3. Dans `1. Intake` :
    - sélectionnez les identifiants dans le nœud Gemini et dans les deux nœuds Telegram ;
    - dans **Config**, renseignez `telegram_chat_id`, `company_name` et, si besoin, `min_confidence` ;
    - puis cliquez sur **Publish** (publier, en haut à droite).
-4. Ouvrez le formulaire : cliquez sur le nœud **Customer request form** (formulaire de demande client) et copiez son *production URL* (URL de production) (`http://localhost:5678/form/support`).
-5. Dans `2. Weekly report`, sélectionnez l'identifiant Telegram, renseignez le chat id dans son **Config**, puis publiez-le.
+4. Dans `3. Review a draft` : sélectionnez l'identifiant Telegram, renseignez `telegram_chat_id` dans **Config**, puis cliquez sur **Publish**.
+5. Le formulaire client se trouve à l'adresse `http://localhost:5678/form/support`.
+6. Dans `2. Weekly report`, sélectionnez l'identifiant Telegram, renseignez le chat id dans son **Config**, puis publiez-le.
 
-**Le lien de relecture ne fonctionne que sur l'ordinateur qui fait tourner n8n,** et il fonctionne comme un mot de passe : toute personne qui l'a peut valider la réponse. Ne le transférez pas. Il pointe vers `localhost` : ouvrez-le donc dans Telegram Desktop sur cet ordinateur. Pour relire depuis un téléphone, n8n doit être accessible depuis internet, par exemple avec un n8n hébergé ou un tunnel. Ne le faites qu'après avoir mis en place une vraie authentification.
+**Le lien de relecture ne fonctionne que sur l'ordinateur qui fait tourner n8n,** et il fonctionne comme un mot de passe : toute personne qui l'a peut décider de ce ticket, une seule fois. Ne le transférez pas. Il pointe vers `localhost` : ouvrez-le donc dans Telegram Desktop sur cet ordinateur. Pour relire depuis un téléphone, n8n doit être accessible depuis internet, par exemple avec un n8n hébergé ou un tunnel. Ne le faites qu'après avoir mis en place une vraie authentification.
 
 ## Envoyer la vraie réponse
 
-Le dernier nœud, **Send the reply (connect Gmail or SMTP here)** (envoyer la réponse, brancher Gmail ou SMTP ici), ne fait rien, volontairement. Remplacez-le par un nœud Gmail ou SMTP quand vous connectez une vraie boîte mail. Il reçoit `customer_email` et `final_reply`.
+Le dernier nœud de `3. Review a draft`, **Send the reply (connect Gmail or SMTP here)** (envoyer la réponse, brancher Gmail ou SMTP ici), ne fait rien, volontairement. Remplacez-le par un nœud Gmail ou SMTP quand vous connectez une vraie boîte mail. Il reçoit `customer_email` et `final_reply`.
 
 ## Ce que mesure le rapport hebdomadaire
 
 - La part des demandes traitées uniquement par une personne (en pourcentage).
-- Pour les brouillons : combien ont été envoyés tels quels, modifiés, rejetés ou ont expiré.
+- Pour les brouillons : combien ont été envoyés tels quels, modifiés, rejetés ou ont expiré (pas de décision dans le délai `hours_to_decide`).
 - Le temps médian jusqu'à une décision humaine.
 - Les demandes par catégorie.
 

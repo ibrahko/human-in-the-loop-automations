@@ -1,7 +1,7 @@
 {
   "id": "hitlSupIntake001",
-  "name": "Support — 1. Intake and approval (AI drafts, a human decides)",
-  "description": "Classifies each customer request with Gemini and drafts a reply. Sensitive topics go straight to a human; every other draft waits for a person to approve, edit or reject it.",
+  "name": "Support — 1. Intake (AI drafts, a human decides)",
+  "description": "Classifies each customer request with Gemini and drafts a reply. Sensitive topics go straight to a human; every other draft is sent to a person with a link to the review form (workflow 3).",
   "active": false,
   "settings": {
     "executionOrder": "v1"
@@ -57,7 +57,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "{\n  \"model\": \"gemini-3.5-flash-lite\",\n  \"telegram_chat_id\": \"PUT_YOUR_TELEGRAM_CHAT_ID_HERE\",\n  \"company_name\": \"Demo Shop\",\n  \"drafting_enabled\": true,\n  \"min_confidence\": 0.7,\n  \"human_only_categories\": [\n    \"refund\",\n    \"complaint\"\n  ],\n  \"hours_to_decide\": 48\n}",
+        "jsonOutput": "{\n  \"model\": \"gemini-3.5-flash-lite\",\n  \"telegram_chat_id\": \"PUT_YOUR_TELEGRAM_CHAT_ID_HERE\",\n  \"company_name\": \"Demo Shop\",\n  \"n8n_url\": \"http://localhost:5678\",\n  \"drafting_enabled\": true,\n  \"min_confidence\": 0.7,\n  \"human_only_categories\": [\n    \"refund\",\n    \"complaint\"\n  ]\n}",
         "options": {}
       },
       "id": "d0ab5a38-9739-536b-9323-6cbfb4aac395",
@@ -72,7 +72,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Give the request an id and clean field names (the form answers come from the trigger).\nconst f = $('Customer request form').item.json;\nreturn {\n  json: {\n    ticket_id: `T-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000)}`,\n    received_at: new Date().toISOString(),\n    customer_name: String(f['Your name'] || '').trim().slice(0, 120),\n    customer_email: String(f['Email'] || '').trim().slice(0, 200),\n    order_number: String(f['Order number'] || '').trim().slice(0, 60),\n    message: String(f['Your message'] || '').trim().slice(0, 5000),\n  },\n};\n"
+        "jsCode": "// Give the request an id and clean field names (the form answers come from the trigger).\nconst f = $('Customer request form').item.json;\n// One-time token that must come back with the review form: without it, a guessed ticket id is useless.\nconst token = () => Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 10)).join('');\nreturn {\n  json: {\n    ticket_id: `T-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000)}`,\n    review_token: token(),\n    received_at: new Date().toISOString(),\n    customer_name: String(f['Your name'] || '').trim().slice(0, 120),\n    customer_email: String(f['Email'] || '').trim().slice(0, 200),\n    order_number: String(f['Order number'] || '').trim().slice(0, 60),\n    message: String(f['Your message'] || '').trim().slice(0, 5000),\n  },\n};\n"
       },
       "id": "2b5ae5e5-0783-55d3-ac4a-686acc67db93",
       "name": "Prepare the ticket",
@@ -86,7 +86,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Ask Gemini to classify the request and draft a reply, as JSON that can be checked.\nconst cfg = $('Config').first().json;\nconst t = $json;\n\nconst prompt = [\n  `You help the customer support team of ${cfg.company_name}.`,\n  'Classify the customer request and draft a short, polite reply in the language the customer used.',\n  'The draft will be reviewed by a person before anything is sent.',\n  '',\n  'Rules for the draft:',\n  '- Never promise a refund, a discount, a compensation, a delivery date or anything not stated below.',\n  '- Never invent order details. If information is missing, ask for it.',\n  '- If you are unsure, say that a colleague will check and come back to them.',\n  '- No more than 120 words. Sign as \"The support team\".',\n  '',\n  'Confidence: how sure you are that the category is right AND that the draft can be sent as is (0 to 1).',\n  '',\n  `Customer name: ${t.customer_name}`,\n  `Order number: ${t.order_number || 'not given'}`,\n  'Message:',\n  t.message,\n].join('\\n');\n\nreturn {\n  json: {\n    ...t,\n    request: {\n      contents: [{ role: 'user', parts: [{ text: prompt }] }],\n      generationConfig: {\n        temperature: 0.2,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'OBJECT',\n          properties: {\n            category: {\n              type: 'STRING',\n              enum: ['order_status', 'shipping', 'product_question', 'refund', 'complaint', 'other'],\n            },\n            urgency: { type: 'STRING', enum: ['low', 'normal', 'high'] },\n            language: { type: 'STRING' },\n            confidence: { type: 'NUMBER' },\n            draft_reply: { type: 'STRING' },\n          },\n          required: ['category', 'urgency', 'language', 'confidence', 'draft_reply'],\n        },\n      },\n    },\n  },\n};\n"
+        "jsCode": "// Ask Gemini to classify the request and draft a reply, as JSON that can be checked.\nconst cfg = $('Config').first().json;\nconst t = $json;\n\nconst prompt = [\n  `You help the customer support team of ${cfg.company_name}.`,\n  'Classify the customer request and draft a short, polite reply in the language the customer used.',\n  'The draft will be reviewed by a person before anything is sent.',\n  '',\n  'Rules for the draft:',\n  '- Never promise a refund, a discount, a compensation, a delivery date or anything not stated below.',\n  '- Never invent order details. If information is missing, ask for it.',\n  '- If you are unsure, say that a colleague will check and come back to them.',\n  '- No more than 120 words. Sign as the support team, in the customer\\'s language (for example \"L\\'équipe support\" in French).',\n  '',\n  'Confidence: how sure you are that the category is right AND that the draft can be sent as is (0 to 1).',\n  '',\n  `Customer name: ${t.customer_name}`,\n  `Order number: ${t.order_number || 'not given'}`,\n  'Message:',\n  t.message,\n].join('\\n');\n\nreturn {\n  json: {\n    ...t,\n    request: {\n      contents: [{ role: 'user', parts: [{ text: prompt }] }],\n      generationConfig: {\n        temperature: 0.2,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'OBJECT',\n          properties: {\n            category: {\n              type: 'STRING',\n              enum: ['order_status', 'shipping', 'product_question', 'refund', 'complaint', 'other'],\n            },\n            urgency: { type: 'STRING', enum: ['low', 'normal', 'high'] },\n            language: { type: 'STRING' },\n            confidence: { type: 'NUMBER' },\n            draft_reply: { type: 'STRING' },\n          },\n          required: ['category', 'urgency', 'language', 'confidence', 'draft_reply'],\n        },\n      },\n    },\n  },\n};\n"
       },
       "id": "0cfdd232-c455-5d52-89de-fc6b93df4c72",
       "name": "Build the Gemini request",
@@ -129,7 +129,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Guardrails decide what a human must handle alone. The AI never decides that on its own.\nconst cfg = $('Config').first().json;\nconst t = $('Build the Gemini request').item.json;\n\nlet ai = null;\nconst problems = [];\nif ($json.error) {\n  // Gemini unavailable: the customer still gets a person, never silence.\n  const err = $json.error;\n  problems.push(`Gemini call failed: ${String(err.message || err.description || JSON.stringify(err)).slice(0, 200)}`);\n} else {\n  try {\n    ai = JSON.parse($json.candidates[0].content.parts[0].text);\n  } catch (e) {\n    problems.push('AI answer is not valid JSON');\n  }\n  if (!problems.length && (ai === null || typeof ai !== 'object' || Array.isArray(ai))) {\n    problems.push('AI answer is not a JSON object');\n    ai = null;\n  }\n}\nconst categories = ['order_status', 'shipping', 'product_question', 'refund', 'complaint', 'other'];\nif (ai) {\n  if (!categories.includes(ai.category)) problems.push('unknown category');\n  if (typeof ai.confidence !== 'number' || ai.confidence < 0 || ai.confidence > 1) problems.push('confidence outside 0-1');\n  if (!['low', 'normal', 'high'].includes(ai.urgency)) problems.push('unknown urgency');\n  if (!ai.draft_reply || String(ai.draft_reply).trim().length < 20) problems.push('empty draft');\n}\n\n// Signs that a draft promises money, a discount, a guarantee or a date (English and French).\n// A match sends the request to a person. False positives are acceptable; misses are not.\n// Tested in tests/guardrail_words.test.js.\nconst risky = /(refund\\w*|reimburs\\w*|rembours\\w*|compensat\\w*|dédommag\\w*|discount\\w*|réduction\\w*|remise\\w*|coupon\\w*|voucher\\w*|store credit|free of charge|gratuit\\w*|guarantee\\w*|garanti\\w*|\\d+\\s?(%|€|\\$|usd\\b|eur\\b|euros?\\b|fcfa\\b|xof\\b)|[$€]\\s?\\d+|\\b(deliver\\w*|arriv\\w*|ship\\w*|livr\\w*|expédi\\w*|recevr\\w*)\\b[^.!?]{0,40}\\b(on|by|tomorrow|today|demain|aujourd'hui|avant|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d{1,2}))/i;\n\nlet route = 'needs_approval';\nlet reason = '';\nif (!cfg.drafting_enabled) {\n  route = 'human_only';\n  reason = 'drafting is paused (drafting_enabled = false in Config)';\n} else if (problems.length) {\n  route = 'human_only';\n  reason = $json.error ? problems[0] : `AI answer rejected: ${problems.join('; ')}`;\n} else if (cfg.human_only_categories.includes(ai.category)) {\n  route = 'human_only';\n  reason = `sensitive topic (${ai.category}): always handled by a person`;\n} else if (ai.confidence < cfg.min_confidence) {\n  route = 'human_only';\n  reason = `AI not confident enough (${ai.confidence} < ${cfg.min_confidence})`;\n} else if (risky.test(ai.draft_reply)) {\n  route = 'human_only';\n  reason = 'the draft mentions money, a guarantee or a date: a person must write it';\n}\n\n// Escaped copies for the Telegram messages (sent as HTML).\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst draft = route === 'needs_approval' ? String(ai.draft_reply).slice(0, 2000) : '';\n\nreturn {\n  json: {\n    ...t,\n    request: undefined,\n    category: ai && categories.includes(ai.category) ? ai.category : 'unknown',\n    urgency: ai && ['low', 'normal', 'high'].includes(ai.urgency) ? ai.urgency : 'normal',\n    language: ai ? String(ai.language || '').slice(0, 30) : '',\n    ai_confidence: ai && typeof ai.confidence === 'number' ? ai.confidence : null,\n    route,\n    route_reason: reason,\n    // A draft is kept only when a human will review it.\n    draft_reply: draft,\n    decision: '',\n    final_reply: '',\n    edited: '',\n    decided_at: '',\n    minutes_to_decision: null,\n    model: cfg.model,\n    html: {\n      name: esc(t.customer_name),\n      email: esc(t.customer_email),\n      order: esc(t.order_number || '—'),\n      message: esc(t.message.slice(0, 1500)),\n      draft: esc(draft),\n      reason: esc(reason),\n    },\n  },\n};\n"
+        "jsCode": "// Guardrails decide what a human must handle alone. The AI never decides that on its own.\nconst cfg = $('Config').first().json;\nconst t = $('Build the Gemini request').item.json;\n\nlet ai = null;\nconst problems = [];\nif ($json.error) {\n  // Gemini unavailable: the customer still gets a person, never silence.\n  const err = $json.error;\n  problems.push(`Gemini call failed: ${String(err.message || err.description || JSON.stringify(err)).slice(0, 200)}`);\n} else {\n  try {\n    ai = JSON.parse($json.candidates[0].content.parts[0].text);\n  } catch (e) {\n    problems.push('AI answer is not valid JSON');\n  }\n  if (!problems.length && (ai === null || typeof ai !== 'object' || Array.isArray(ai))) {\n    problems.push('AI answer is not a JSON object');\n    ai = null;\n  }\n}\nconst categories = ['order_status', 'shipping', 'product_question', 'refund', 'complaint', 'other'];\nif (ai) {\n  if (!categories.includes(ai.category)) problems.push('unknown category');\n  if (typeof ai.confidence !== 'number' || ai.confidence < 0 || ai.confidence > 1) problems.push('confidence outside 0-1');\n  if (!['low', 'normal', 'high'].includes(ai.urgency)) problems.push('unknown urgency');\n  if (!ai.draft_reply || String(ai.draft_reply).trim().length < 20) problems.push('empty draft');\n}\n\n// Signs that a draft promises money, a discount, a guarantee or a date (English and French).\n// A match sends the request to a person. False positives are acceptable; misses are not.\n// Tested in tests/guardrail_words.test.js.\nconst risky = /(refund\\w*|reimburs\\w*|rembours\\w*|compensat\\w*|dédommag\\w*|discount\\w*|réduction\\w*|remise\\w*|coupon\\w*|voucher\\w*|store credit|free of charge|gratuit\\w*|guarantee\\w*|garanti\\w*|\\d+\\s?(%|€|\\$|usd\\b|eur\\b|euros?\\b|fcfa\\b|xof\\b)|[$€]\\s?\\d+|\\b(deliver\\w*|arriv\\w*|ship\\w*|livr\\w*|expédi\\w*|recevr\\w*)\\b[^.!?]{0,40}\\b(on|by|tomorrow|today|demain|aujourd'hui|avant|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d{1,2}))/i;\n\nlet route = 'needs_approval';\nlet reason = '';\nif (!cfg.drafting_enabled) {\n  route = 'human_only';\n  reason = 'drafting is paused (drafting_enabled = false in Config)';\n} else if (problems.length) {\n  route = 'human_only';\n  reason = $json.error ? problems[0] : `AI answer rejected: ${problems.join('; ')}`;\n} else if (cfg.human_only_categories.includes(ai.category)) {\n  route = 'human_only';\n  reason = `sensitive topic (${ai.category}): always handled by a person`;\n} else if (ai.confidence < cfg.min_confidence) {\n  route = 'human_only';\n  reason = `AI not confident enough (${ai.confidence} < ${cfg.min_confidence})`;\n} else if (risky.test(ai.draft_reply)) {\n  route = 'human_only';\n  reason = 'the draft mentions money, a guarantee or a date: a person must write it';\n}\n\n// Escaped copies for the Telegram messages (sent as HTML).\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst draft = route === 'needs_approval' ? String(ai.draft_reply).slice(0, 1500) : '';\n// Link to the review form (workflow 3): ticket id, one-time token, and the draft pre-filled for editing.\n// Telegram does not make localhost links clickable, so the link is shown as text to copy.\n// The pre-filled draft is dropped if it would make the link too long for a Telegram message.\nconst baseLink = `${String(cfg.n8n_url).replace(/\\/$/, '')}/form/support-review` +\n  `?ticket_id=${encodeURIComponent(t.ticket_id)}&token=${encodeURIComponent(t.review_token)}`;\nconst prefill = `&${encodeURIComponent('Reply to send')}=${encodeURIComponent(draft)}`;\nconst reviewLink = baseLink.length + prefill.length <= 1800 ? baseLink + prefill : baseLink;\n\nreturn {\n  json: {\n    ...t,\n    request: undefined,\n    category: ai && categories.includes(ai.category) ? ai.category : 'unknown',\n    urgency: ai && ['low', 'normal', 'high'].includes(ai.urgency) ? ai.urgency : 'normal',\n    language: ai ? String(ai.language || '').slice(0, 30) : '',\n    ai_confidence: ai && typeof ai.confidence === 'number' ? ai.confidence : null,\n    route,\n    route_reason: reason,\n    // A draft is kept only when a human will review it.\n    draft_reply: draft,\n    decision: '',\n    final_reply: '',\n    edited: '',\n    decided_at: '',\n    minutes_to_decision: null,\n    model: cfg.model,\n    html: {\n      name: esc(t.customer_name),\n      email: esc(t.customer_email),\n      order: esc(t.order_number || '—'),\n      message: esc(t.message.slice(0, 1500)),\n      draft: esc(draft),\n      reason: esc(reason),\n      review_link: esc(reviewLink),\n    },\n  },\n};\n"
       },
       "id": "fa361b4e-4f2c-52c4-913e-636a4f172f9e",
       "name": "Apply the guardrails",
@@ -153,6 +153,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "ticket_id": "={{ $json.ticket_id }}",
+            "review_token": "={{ $json.review_token }}",
             "received_at": "={{ $json.received_at }}",
             "customer_name": "={{ $json.customer_name }}",
             "customer_email": "={{ $json.customer_email }}",
@@ -177,6 +178,15 @@
             {
               "id": "ticket_id",
               "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_token",
+              "displayName": "review_token",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -369,13 +379,13 @@
           },
           "conditions": [
             {
-              "id": "0d4f1137-b8e6-5afb-9a8a-2e7db21563ce",
+              "id": "107e12c3-02f4-53bb-af7c-b181f1f67049",
               "leftValue": "={{ $json.route }}",
-              "rightValue": "needs_approval",
               "operator": {
                 "type": "string",
                 "operation": "equals"
-              }
+              },
+              "rightValue": "needs_approval"
             }
           ],
           "combinator": "and"
@@ -394,7 +404,7 @@
     {
       "parameters": {
         "chatId": "={{ $('Config').first().json.telegram_chat_id }}",
-        "text": "=📝 Ticket {{ $('Save the ticket').item.json.ticket_id }} — {{ $('Save the ticket').item.json.category }} ({{ $('Save the ticket').item.json.urgency }})\nFrom: {{ $('Apply the guardrails').item.json.html.name }}\n\n<b>Customer wrote:</b>\n{{ $('Apply the guardrails').item.json.html.message }}\n\n<b>Draft reply:</b>\n{{ $('Apply the guardrails').item.json.html.draft }}\n\nApprove, edit or reject: {{ $execution.resumeFormUrl }}",
+        "text": "=📝 Ticket {{ $('Save the ticket').item.json.ticket_id }} — {{ $('Save the ticket').item.json.category }} ({{ $('Save the ticket').item.json.urgency }})\nFrom: {{ $('Apply the guardrails').item.json.html.name }}\n\n<b>Customer wrote:</b>\n{{ $('Apply the guardrails').item.json.html.message }}\n\n<b>Draft reply:</b>\n{{ $('Apply the guardrails').item.json.html.draft }}\n\n👉 <b>Review: send, edit or reject.</b> Tap the link to copy it, then open it in the browser of the computer that runs n8n:\n<code>{{ $('Apply the guardrails').item.json.html.review_link }}</code>",
         "additionalFields": {
           "appendAttribution": false,
           "disable_web_page_preview": true,
@@ -431,202 +441,7 @@
     },
     {
       "parameters": {
-        "resume": "form",
-        "formTitle": "=Review the reply to ticket {{ $('Save the ticket').item.json.ticket_id }}",
-        "formDescription": "=Customer message:\n{{ $('Save the ticket').item.json.message }}\n\nProposed reply:\n{{ $('Save the ticket').item.json.draft_reply }}",
-        "formFields": {
-          "values": [
-            {
-              "fieldLabel": "Decision",
-              "fieldType": "dropdown",
-              "fieldOptions": {
-                "values": [
-                  {
-                    "option": "Send as is"
-                  },
-                  {
-                    "option": "Send my edited version"
-                  },
-                  {
-                    "option": "Reject - I will handle it myself"
-                  }
-                ]
-              },
-              "requiredField": true
-            },
-            {
-              "fieldLabel": "Edited reply",
-              "fieldType": "textarea",
-              "placeholder": "Only if you chose to send your edited version"
-            }
-          ]
-        },
-        "limitWaitTime": true,
-        "limitType": "afterTimeInterval",
-        "resumeAmount": "={{ $('Config').first().json.hours_to_decide }}",
-        "resumeUnit": "hours",
-        "options": {}
-      },
-      "id": "ef99f74b-f852-5958-b055-2363f6bf07fc",
-      "name": "Wait for the human decision",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        2160,
-        0
-      ],
-      "webhookId": "488887cc-57fb-5ecc-8ace-01deecbca40b"
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "// Turn the review form into a decision. No answer before the deadline = not sent.\nconst ticket = $('Save the ticket').item.json;\nconst choice = String($json['Decision'] || '').trim();\nconst edited = String($json['Edited reply'] || '').trim();\n\nlet decision;\nlet finalReply = '';\nif (choice === 'Send as is') {\n  decision = 'sent_as_is';\n  finalReply = ticket.draft_reply;\n} else if (choice === 'Send my edited version' && edited.length >= 10) {\n  decision = 'sent_edited';\n  finalReply = edited;\n} else if (choice === 'Send my edited version') {\n  decision = 'rejected'; // \"edit\" chosen but no text: do not send an empty or stale reply\n} else if (choice.startsWith('Reject')) {\n  decision = 'rejected';\n} else {\n  decision = 'expired'; // nobody answered in time\n}\n\nconst decidedAt = new Date();\nconst minutes = Math.round((decidedAt - new Date(ticket.received_at)) / 60000);\n\nreturn {\n  json: {\n    ticket_id: ticket.ticket_id,\n    customer_email: ticket.customer_email,\n    decision,\n    final_reply: finalReply,\n    edited: decision === 'sent_edited' ? 'yes' : decision === 'sent_as_is' ? 'no' : '',\n    decided_at: decidedAt.toISOString(),\n    minutes_to_decision: minutes,\n    send: decision === 'sent_as_is' || decision === 'sent_edited',\n  },\n};\n"
-      },
-      "id": "289e311c-0dae-5971-b044-b144082f99ed",
-      "name": "Record the decision",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2400,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "row",
-        "operation": "update",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "name",
-          "value": "support_tickets"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "ticket_id",
-              "condition": "eq",
-              "keyValue": "={{ $json.ticket_id }}"
-            }
-          ]
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "decision": "={{ $json.decision }}",
-            "final_reply": "={{ $json.final_reply }}",
-            "edited": "={{ $json.edited }}",
-            "decided_at": "={{ $json.decided_at }}",
-            "minutes_to_decision": "={{ $json.minutes_to_decision }}"
-          },
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "decision",
-              "displayName": "decision",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "final_reply",
-              "displayName": "final_reply",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "edited",
-              "displayName": "edited",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "decided_at",
-              "displayName": "decided_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "minutes_to_decision",
-              "displayName": "minutes_to_decision",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "number",
-              "canBeUsedToMatch": true
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "4665644c-d3f9-5527-85dd-9b94505393f6",
-      "name": "Update the ticket",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        2640,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "3027ada4-91be-57f8-a9df-889fcbc2472f",
-              "leftValue": "={{ $('Record the decision').item.json.send }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "c0a7aae3-8233-574e-b0f1-d0ae457c3971",
-      "name": "Reply approved?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2880,
-        0
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "aafaa105-cd34-560f-96b2-41d34a016e25",
-      "name": "Send the reply (connect Gmail or SMTP here)",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        3120,
-        -80
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## Support — AI drafts, a human decides\n1. A customer fills in the form (open it from the **Customer request form** node).\n2. Gemini classifies the request and drafts a reply in the customer's language.\n3. **Apply the guardrails** sends refunds, complaints, low-confidence answers and any draft that promises money or dates straight to a human, with no draft.\n4. Other drafts go to Telegram with a link to a review form: send as is, edit, or reject.\n5. Nothing reaches the customer without a human decision. Every step is stored in `support_tickets`.",
+        "content": "## Support — AI drafts, a human decides\n1. A customer fills in the form at `/form/support`.\n2. Gemini classifies the request and drafts a reply in the customer's language.\n3. **Apply the guardrails** sends refunds, complaints, low-confidence answers and any draft that promises money or dates straight to a human, with no draft.\n4. Other drafts go to Telegram with a one-time link to the review form (workflow **3. Review a draft**).\n5. The customer only ever sees the thank-you page. Nothing reaches them without a human decision.",
         "height": 400,
         "width": 600
       },
@@ -637,22 +452,6 @@
       "position": [
         -60,
         -460
-      ]
-    },
-    {
-      "parameters": {
-        "content": "### Sending the reply\nThis demo stops here on purpose. Replace this node with a Gmail or SMTP node when you connect a real mailbox.",
-        "height": 200,
-        "width": 360,
-        "color": 3
-      },
-      "id": "cf7d9338-6452-576e-b0e1-065124157416",
-      "name": "Outbound",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        3040,
-        -340
       ]
     }
   ],
@@ -746,61 +545,6 @@
         [
           {
             "node": "Hand over to a human",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Ask a human to approve": {
-      "main": [
-        [
-          {
-            "node": "Wait for the human decision",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait for the human decision": {
-      "main": [
-        [
-          {
-            "node": "Record the decision",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Record the decision": {
-      "main": [
-        [
-          {
-            "node": "Update the ticket",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update the ticket": {
-      "main": [
-        [
-          {
-            "node": "Reply approved?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Reply approved?": {
-      "main": [
-        [
-          {
-            "node": "Send the reply (connect Gmail or SMTP here)",
             "type": "main",
             "index": 0
           }
